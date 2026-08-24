@@ -40,34 +40,49 @@ DENETİM ALANLARI:
 - **Yasal Şerh:** "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Kanun kapsamında hukuki mütalaa teşkil etmez."
 """
 
-# Türkçe Font İndirme ve PDF Fonksiyonu
+# Güvenli Türkçe Font İndirme Fonksiyonu
 def get_pdf_font():
     font_path = "DejaVuSans.ttf"
     if not os.path.exists(font_path):
-        url = "https://raw.githubusercontent.com/fpdf2/fpdf2/master/test/fonts/DejaVuSans.ttf"
-        urllib.request.urlretrieve(url, font_path)
+        url = "https://cdn.jsdelivr.net/gh/dejavu-fonts/dejavu-fonts@master/ttf/DejaVuSans.ttf"
+        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+        with urllib.request.urlopen(req) as response, open(font_path, 'wb') as out_file:
+            out_file.write(response.read())
     return font_path
 
 def create_pdf(report_text, sektor_adi):
-    font_file = get_pdf_font()
-    
+    try:
+        font_file = get_pdf_font()
+        use_unicode = True
+    except Exception:
+        use_unicode = False
+
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Türkçe Unicode Font Tanımlama
-    pdf.add_font("DejaVu", "", font_file)
+    if use_unicode:
+        pdf.add_font("DejaVu", "", font_file)
+        font_main = "DejaVu"
+    else:
+        font_main = "Helvetica"
     
-    pdf.set_font("DejaVu", "", 15)
+    pdf.set_font(font_main, "" if use_unicode else "B", 14)
     pdf.cell(0, 10, "AdShield - Reklam Uyumluluk ve Risk Raporu", ln=True, align="C")
     
-    pdf.set_font("DejaVu", "", 9)
+    pdf.set_font(font_main, "", 9)
     pdf.cell(0, 6, f"Sektör: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
     pdf.line(10, 28, 200, 28)
     pdf.ln(8)
     
     temiz_metin = report_text.replace("### ", "").replace("**", "")
-    pdf.set_font("DejaVu", "", 9.5)
+    
+    if not use_unicode:
+        tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
+        temiz_metin = temiz_metin.translate(tr_map)
+        temiz_metin = temiz_metin.encode('latin-1', 'replace').decode('latin-1')
+        
+    pdf.set_font(font_main, "", 9.5)
     pdf.multi_cell(0, 5.5, temiz_metin)
     
     return bytes(pdf.output())
