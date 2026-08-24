@@ -14,8 +14,8 @@ st.set_page_config(
     layout="wide"
 )
 
-st.title("🛡️ AdShield: Reklam Kurulu Emsal Karar & Ceza Analiz Motoru")
-st.caption("200+ Resmi Bülten Külliyatı, Hukuki Değerlendirme, Somut Karar Atıfları ve Ceza Simülasyonu")
+st.title("🛡️ AdShield: Reklam Hukuku ve Emsal Risk Analiz Sistemi")
+st.caption("Resmi Reklam Kurulu İçtihatları, Birebir Emsal Kıyaslaması ve İnteraktif Uyum Danışmanı")
 
 # API Anahtarı
 api_key = st.secrets.get("GEMINI_API_KEY", None)
@@ -54,19 +54,19 @@ def get_relevant_emsaller(metin, sektor, top_k=8):
     sektor_keywords = {
         "Kozmetik & Kişisel Bakım / Anne-Bebek": [
             "kozmetik", "doğal", "bitkisel", "organik", "cilt", "leke", "kırışıklık", 
-            "bebek", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik"
+            "bebek", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik", "günde"
         ],
         "Takviye Edici Gıda & Sağlık": [
             "takviye", "gıda", "sağlık beyanı", "tedavi", "hastalık", "kilo", 
-            "zayıflama", "bağışıklık", "eklem", "ağrı", "şifa", "onay"
+            "zayıflama", "bağışıklık", "eklem", "ağrı", "şifa", "onay", "kesin son", "iltihap"
         ],
         "E-Ticaret & İndirim Kampanyaları": [
             "indirim", "fiyat", "en ucuz", "tavsiye edilen", "stok", "bedava", 
-            "en çok satan", "fiyatı düştü", "efsane", "tükeniyor"
+            "en çok satan", "fiyatı düştü", "efsane", "tükeniyor", "orijinal fiyat"
         ],
         "Sosyal Medya & Influencer Reklamları": [
             "influencer", "işbirliği", "etiket", "örtülü reklam", "sosyal medya", 
-            "tanıtım", "link", "ortaklık", "sponsor", "reklam"
+            "tanıtım", "link", "ortaklık", "sponsor", "reklam", "deneyin"
         ]
     }
     
@@ -81,8 +81,10 @@ def get_relevant_emsaller(metin, sektor, top_k=8):
         skor = sum(k_lower.count(k) * 2 for k in anahtarlar)
         if "idari para" in k_lower or "durdurma" in k_lower or "dosya no" in k_lower:
             skor += 5
+        if '"' in karar or '“' in karar:
+            skor += 3
         if skor > 0:
-            skorlu.append((skor, karar[:3500]))
+            skorlu.append((skor, karar[:3800]))
 
     skorlu.sort(key=lambda x: x[0], reverse=True)
     secilenler = [k[1] for k in skorlu[:top_k]]
@@ -149,19 +151,23 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
 
     return bytes(pdf.output())
 
-# Oturum Durumu
+# Oturum Durumu Yönetimi
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "sektor_bilgisi" not in st.session_state:
     st.session_state.sektor_bilgisi = None
 if "mecra_bilgisi" not in st.session_state:
     st.session_state.mecra_bilgisi = None
+if "aktif_metin" not in st.session_state:
+    st.session_state.aktif_metin = ""
+if "chat_history" not in st.session_state:
+    st.session_state.chat_history = []
 
 # Arayüz
 col1, col2 = st.columns([1, 1])
 
 with col1:
-    st.subheader("1. Reklam ve Mecra Parametreleri")
+    st.subheader("1. İnceleme Parametreleri")
     sektor = st.selectbox("Sektör Seçin", [
         "Kozmetik & Kişisel Bakım / Anne-Bebek",
         "Takviye Edici Gıda & Sağlık",
@@ -182,72 +188,71 @@ with col1:
         image = Image.open(yuklenen_gorsel)
         st.image(image, caption="Analize Alınan Taslak", use_container_width=True)
 
-    analiz_butonu = st.button("Kapsamlı Hukuki Analiz ve Emsal Taramasını Başlat", type="primary")
+    analiz_butonu = st.button("Hukuki İnceleme ve Emsal Taramasını Başlat", type="primary")
 
 with col2:
-    st.subheader("2. Hukuki Değerlendirme & Emsal Künyesi")
+    st.subheader("2. Hukuki Uyum ve İçtihat Raporu")
     if analiz_butonu:
         if not api_key:
             st.error("Lütfen bir Gemini API anahtarı sağlayın.")
         elif not reklam_metni and not yuklenen_gorsel:
             st.warning("Lütfen analiz için en az bir metin veya görsel yükleyin.")
         else:
-            with st.spinner("Mevzuat ve 72 MB'lık karar arşivi taranıyor, hukuki muhakeme kuruluyor..."):
+            with st.spinner("Reklam Kurulu içtihatları taranıyor ve hukuki risk analizi hazırlanıyor..."):
                 try:
                     genai.configure(api_key=api_key)
                     ilgili_emsaller = get_relevant_emsaller(reklam_metni, sektor)
                     
                     prompt = f"""
-Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisi ve Danışmansın.
+Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK ve TGK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisi ve Danışmansın.
 
-Aşağıda 72 MB'lık resmi arşivden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
+Aşağıda karar külliyatından incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ REKLAM KURULU EMSAL METİNLERİ ===
 {ilgili_emsaller}
 ==========================================
 
-İNCELENECEK REKLAM:
+İNCELENECEK REKLAM VAKIASI:
 Sektör: {sektor}
 Yayın Mecrası: {mecra}
 İçerik: {reklam_metni}
 
 GÖREVİN:
-1. İLK ÖNCE: Reklamdaki tüm iddiaları yürürlükteki mevzuat ve Reklam Kurulu'nun yerleşik ilkeleri ışığında fıkra fıkra, derinlemesine ve analitik bir hukukçu muhakemesiyle değerlendir.
-2. ARDINDAN: Arşivdeki somut kararlardan tespit edilen birebir veya en yakın emsal kararları dosya numarası, karar tarihi ve uygulanan yaptırımlarla künye halinde sun.
-3. SONRASINDA: Ceza simülasyonunu, pazarlama gücünü koruyan güvenli revizyon metnini ve gerekli ispat standartlarını açıkla.
+Yapay zeka şablonlarından uzak, akıcı, doyurucu ve gerekçeli bir 'Hukuki İnceleme Memorandumu' kaleme almaktır.
 
-RAPOR FORMATI (Kesinlikle bu başlık sırasıyla yaz):
+RAPOR FORMATI:
 
 ### [RİSK DERECESİ: KIRMIZI / SARI / YEŞİL] - Risk Skoru: [0-100]
 
-### 1. KAPSAMLI HUKUKİ VE İÇTİHAT ANALİZİ
-(Reklamdaki her bir iddiayı tek tek ele alarak; 6502 sayılı Kanun md. 61, Ticari Reklam Yönetmeliği, TİTCK Kılavuzları ve Kurul'un 'ortalama tüketici algısı' ile 'ispat külfeti' prensipleri açısından kapsamlı şekilde değerlendir):
-* **[İddia/İfade 1 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
-* **[İddia/İfade 2 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
-* **[İddia/İfade 3 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
+### I. HUKUKİ RİSK TEŞHİSİ VE VAKIA DEĞERLENDİRMESİ
+(İncelenen reklamdaki tüm iddiaları akıcı ve gerekçeli hukuki paragraflarla ele al. Her iddiayı; ihlal edilen kanun/yönetmelik maddeleri, ortalama tüketici nezdinde uyandırdığı algı ve mevzuatın aradığı ispat külfeti açısından derinlemesine açıkla):
 
-### 2. REKLAM KURULU EMSAL KARARLARI, SOMUT ATIFLAR VE OLAY ÖRNEKLERİ
-(Arşivdeki emsal metinlerden tespit edilen somut kararları kıyaslayarak EN AZ 2 ADET karar künyesini eksiksiz aktar):
+### II. REKLAM KURULU İÇTİHATLARI VE BİREBİR EMSAL ALINTILAR
+(Arşivdeki emsal metinlerden tespit edilen somut kararları kıyaslayarak EN AZ 2 ADET emsal kararı şu detayda sun):
 * **Emsal Karar 1:**
   - **Dosya No & Karar Tarihi:** (Örn: Dosya No: 2023/..., Karar Tarihi: ..., Toplantı No: ...)
-  - **Maddi Vakıa & İncelenen İddialar:** (Kurul önüne gelen somut olaydaki reklam ifadeleri)
-  - **Kurulun Hüküm Gerekçesi:** (Kurulun ihlale esas aldığı temel hukuki değerlendirme)
-  - **Uygulanan Yaptırım:** (Durdurma / ... TL İdari Para Cezası / Düzeltme)
+  - **Firma & Mecra:** (Varsa karardaki firma ve yayın mecrası)
+  - **Kararda Ceza Alan Orijinal İfadeler:** (Kurul kararında ceza alan şirketin kullandığı tırnak içi tam ifadeler)
+  - **İncelenen Reklamla Somut Kıyas:** (Bizim reklamımızdaki hangi kelime/vaat bu karardaki cezalı ifadeyle maddi vakıa olarak örtüşüyor?)
+  - **Kurulun Hüküm Gerekçesi:** (Kurulun ihlale esas aldığı temel hukuki prensip)
+  - **Uygulanan Yaptırım:** (Durdurma / ... TL İdari Para Cezası)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
-  - **Maddi Vakıa & İncelenen İddialar:**
+  - **Firma & Mecra:**
+  - **Kararda Ceza Alan Orijinal İfadeler:**
+  - **İncelenen Reklamla Somut Kıyas:**
   - **Kurulun Hüküm Gerekçesi:**
   - **Uygulanan Yaptırım:**
 
-### 3. İDARİ PARA CEZASI SİMÜLATÖRÜ (6502 SAYILI KANUN MD. 77)
+### III. YAPTIRIM VE İDARİ PARA CEZASI PROJEKSİYONU
 * **Seçilen Mecra:** {mecra}
-* **Kanuni İdari Para Cezası Skalası:** (İlgili mecra için öngörülen güncel alt ve üst idari para cezası limitleri)
-* **Diğer Yaptırım Riskleri:** (Durdurma, Düzeltme, Siteden İçerik Çıkarma/Erişim Engeli Bildirimi)
+* **6502 Sayılı Kanun Md. 77 Kapsamında Ceza Skalası:** (İlgili mecra için geçerli güncel alt ve üst idari para cezası tutarları)
+* **İdari Tedbir ve Erişim Engeli Riski:** (Durdurma, düzeltme veya Kanun md. 77/A uyarınca erişim engeli/içerik çıkarma riski)
 
-### 4. İÇTİHADA UYGUN GÜVENLİ PAZARLAMA STRATEJİSİ VE REVİZE METİN
-* **Revize Reklam Metni:** (Kurul içtihatlarına uygun, cezai yaptırım riskini sıfırlayan ancak ticari gücünü koruyan alternatif metin)
-* **İçtihat Odaklı Gerekçe & İspat Şartı:** (İddiaların yasal denetimden geçebilmesi için bulunması gereken klinik test, tüketici araştırması veya görsel dipnot standardı)
+### IV. TİCARİ ETKİYİ KORUYAN GÜVENLİ REVİZYON STRATEJİSİ
+* **Revize Reklam Metni:** (Cezai riski sıfırlayan, iddianın pazarlama etkisini koruyan alternatif metin)
+* **İçtihat Odaklı Gerekçe & İspat Şartı:** (İfadenin Kurul denetiminden geçebilmesi için gereken klinik test, tüketici araştırması veya görsel altı dipnot standardı)
 
-### 5. YASAL ŞERH
+### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Avukatlık Kanunu kapsamında hukuki mütalaa teşkil etmez."
 """
                     model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
@@ -259,6 +264,8 @@ RAPOR FORMATI (Kesinlikle bu başlık sırasıyla yaz):
                     st.session_state.rapor_sonucu = response.text
                     st.session_state.sektor_bilgisi = sektor
                     st.session_state.mecra_bilgisi = mecra
+                    st.session_state.aktif_metin = reklam_metni
+                    st.session_state.chat_history = []  # Yeni analizde sohbeti sıfırla
                 except Exception as err:
                     st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
@@ -267,7 +274,7 @@ RAPOR FORMATI (Kesinlikle bu başlık sırasıyla yaz):
         try:
             pdf_verisi = create_pdf(st.session_state.rapor_sonucu, st.session_state.sektor_bilgisi, st.session_state.mecra_bilgisi)
             st.download_button(
-                label="📄 Emsal Kararlı & Hukuki Analiz Raporunu İndir (PDF)",
+                label="📄 Hukuki Risk ve Emsal Raporunu İndir (PDF)",
                 data=pdf_verisi,
                 file_name=f"AdShield_Hukuki_Risk_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                 mime="application/pdf",
@@ -275,3 +282,53 @@ RAPOR FORMATI (Kesinlikle bu başlık sırasıyla yaz):
             )
         except Exception as e:
             st.warning(f"PDF oluşturulurken bir uyarı oluştu: {e}")
+
+# Raporun Altında İnteraktif Soru-Cevap ve Revizyon Danışmanı
+if st.session_state.rapor_sonucu:
+    st.write("---")
+    st.subheader("💬 Hukuki Danışman & Revizyon Asistanı")
+    st.caption("Üretilen rapora, emsal kararlara veya yeni alternatif metin önerilerinize dair aklınıza takılanları sorabilirsiniz.")
+
+    # Geçmiş mesajları listele
+    for msg in st.session_state.chat_history:
+        with st.chat_message(msg["role"]):
+            st.markdown(msg["content"])
+
+    # Yeni soru girişi
+    kullanici_sorusu = st.chat_input("Örn: '3 günde' yerine 'düzenli kullanımda' dersem ceza riski biter mi?")
+    if kullanici_sorusu:
+        st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
+        with st.chat_message("user"):
+            st.markdown(kullanici_sorusu)
+
+        with st.chat_message("assistant"):
+            with st.spinner("Hukuki değerlendirme yapılıyor..."):
+                try:
+                    chat_model = genai.GenerativeModel(
+                        model_name=secilen_model,
+                        system_instruction=f"""
+Sen bir Reklam Hukuku Danışmanısın. Kullanıcı daha önce sistem tarafından denetlenen bir reklam ve üretilen rapor hakkında sana soru soruyor veya alternatif reklam metinlerini test etmek istiyor.
+
+BAĞLAM BİLGİLERİ:
+- İncelenen Sektör: {st.session_state.sektor_bilgisi}
+- Yayın Mecrası: {st.session_state.mecra_bilgisi}
+- Orijinal Reklam Metni: {st.session_state.aktif_metin}
+- Üretilen Hukuki Rapor:
+{st.session_state.rapor_sonucu}
+
+GÖREVİN:
+Kullanıcının sorusunu doğrudan Reklam Kurulu içtihatları, 6502 sayılı Kanun ve ispat kuralları ışığında, net ve çözüm odaklı bir hukukçu diliyle yanıtlamak; yeni metin öneriyorsa risk analizini anında yapmaktır.
+"""
+                    )
+                    
+                    # Sohbet geçmişini modele aktar
+                    sohbet_gecmisi_prompt = ""
+                    for h in st.session_state.chat_history:
+                        sohbet_gecmisi_prompt += f"\n{h['role'].upper()}: {h['content']}"
+
+                    chat_response = chat_model.generate_content(sohbet_gecmisi_prompt)
+                    cevap_metni = chat_response.text
+                    st.markdown(cevap_metni)
+                    st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
+                except Exception as e:
+                    st.error(f"Yanıt üretilirken bir hata oluştu: {e}")
