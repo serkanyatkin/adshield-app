@@ -9,15 +9,15 @@ import re
 import requests
 
 st.set_page_config(
-    page_title="AdShield - Reklam Kurulu Emsal ve Ceza Risk Denetimi",
+    page_title="AdShield - Reklam Kurulu Emsal & Hukuki Risk Analizi",
     page_icon="🛡️",
     layout="wide"
 )
 
 st.title("🛡️ AdShield: Reklam Kurulu Emsal Karar & Ceza Analiz Motoru")
-st.caption("200+ Resmi Bülten Külliyatı, Hukuki Kıyaslama, Dosya No Atfı ve İdari Para Cezası Simülasyonu")
+st.caption("200+ Resmi Bülten Külliyatı, Hukuki Değerlendirme, Somut Karar Atıfları ve Ceza Simülasyonu")
 
-# API Anahtarı Yönetimi
+# API Anahtarı
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 if not api_key:
     st.sidebar.header("Ayarlar")
@@ -25,7 +25,7 @@ if not api_key:
 
 secilen_model = "gemini-3.6-flash"
 
-# Karar Metinlerini Belleğe Alma ve İndeksleme
+# Karar Metinlerini Belleğe Yükleme
 @st.cache_data
 def load_and_index_kararlar():
     corpus = ""
@@ -41,17 +41,15 @@ def load_and_index_kararlar():
         except Exception:
             continue
     
-    # Karar bloklarını ayır
     karar_bloklari = re.split(r'=== EMSAL KARAR / BÜLTEN:|\n(?=Dosya No\s*:|\d{4}/\d+)', corpus)
-    temiz_bloklar = [k.strip() for k in karar_bloklari if len(k.strip()) > 80]
-    return temiz_bloklar
+    return [k.strip() for k in karar_bloklari if len(k.strip()) > 80]
 
 karar_arsivi = load_and_index_kararlar()
 
-# Hukuki Vakıa ve Anahtar Kelime Bazlı Karar Filtresi
+# Hukuki Süzgeç ve Emsal Karar Eşleştirici
 def get_relevant_emsaller(metin, sektor, top_k=8):
     if not karar_arsivi:
-        return "Karar arşivi yüklenemedi veya dosya bulunamadı."
+        return "Karar arşivi yüklenemedi."
     
     sektor_keywords = {
         "Kozmetik & Kişisel Bakım / Anne-Bebek": [
@@ -88,23 +86,7 @@ def get_relevant_emsaller(metin, sektor, top_k=8):
 
     skorlu.sort(key=lambda x: x[0], reverse=True)
     secilenler = [k[1] for k in skorlu[:top_k]]
-    
     return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:4])
-
-# PDF Raporlama ve Font Desteği
-FONT_PATH = "Roboto-Regular.ttf"
-FONT_URL = "https://cdn.jsdelivr.net/gh/googlefonts/roboto@main/src/hinted/Roboto-Regular.ttf"
-
-def ensure_font():
-    if not os.path.exists(FONT_PATH):
-        try:
-            r = requests.get(FONT_URL, timeout=10)
-            if r.status_code == 200:
-                with open(FONT_PATH, "wb") as f:
-                    f.write(r.content)
-        except Exception:
-            pass
-    return os.path.exists(FONT_PATH)
 
 def clean_markdown_text(text):
     if not text:
@@ -113,32 +95,61 @@ def clean_markdown_text(text):
     text = text.replace("**", "").replace("*", "")
     return text
 
+# Türkçe Karakter Destekli PDF Motoru
 def create_pdf(report_text, sektor_adi, mecra_adi):
-    font_available = ensure_font()
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    main_font = "Roboto" if font_available else "Helvetica"
-    pdf.set_font(main_font, "" if font_available else "B", 14)
-    pdf.cell(0, 9, "AdShield - Reklam Kurulu Emsal Karar ve Risk Raporu", ln=True, align="C")
+    font_path = "DejaVuSans.ttf"
+    font_yuklendi = False
     
-    pdf.set_font(main_font, "", 8.5)
-    pdf.cell(0, 5, f"Sektör: {sektor_adi} | Mecra: {mecra_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
-    pdf.line(10, 26, 200, 26)
-    pdf.ln(6)
-    
+    # UTF-8 ve Türkçe karakterleri tam destekleyen DejaVu Sans fontunu temin et
+    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
+        try:
+            url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/resources/DejaVuSans.ttf"
+            res = requests.get(url, timeout=6)
+            if res.status_code == 200 and len(res.content) > 10000:
+                with open(font_path, "wb") as f:
+                    f.write(res.content)
+        except Exception:
+            pass
+
+    if os.path.exists(font_path) and os.path.getsize(font_path) > 10000:
+        try:
+            pdf.add_font("DejaVu", "", font_path)
+            font_yuklendi = True
+        except Exception:
+            font_yuklendi = False
+
     temiz_metin = clean_markdown_text(report_text)
-    if font_available:
-        pdf.set_font(main_font, "", 9)
+
+    if font_yuklendi:
+        pdf.set_font("DejaVu", "", 13)
+        pdf.cell(0, 9, "AdShield - Reklam Kurulu Emsal Karar ve Risk Raporu", ln=True, align="C")
+        pdf.set_font("DejaVu", "", 8.5)
+        pdf.cell(0, 5, f"Sektör: {sektor_adi} | Mecra: {mecra_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
+        pdf.line(10, 26, 200, 26)
+        pdf.ln(6)
+        pdf.set_font("DejaVu", "", 8.5)
         pdf.multi_cell(0, 5, temiz_metin)
     else:
+        # Font indirilemezse ASCII dönüşümlü güvenli mod
         tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
-        pdf.set_font("Helvetica", "", 9)
-        pdf.multi_cell(0, 5, temiz_metin.translate(tr_map).encode('latin-1', 'replace').decode('latin-1'))
+        pdf.set_font("Helvetica", "B", 13)
+        pdf.cell(0, 9, "AdShield - Reklam Kurulu Emsal Karar ve Risk Raporu", ln=True, align="C")
+        pdf.set_font("Helvetica", "", 8.5)
+        sub_title = f"Sektor: {sektor_adi} | Mecra: {mecra_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}".translate(tr_map)
+        pdf.cell(0, 5, sub_title, ln=True, align="C")
+        pdf.line(10, 26, 200, 26)
+        pdf.ln(6)
+        pdf.set_font("Helvetica", "", 8.5)
+        ascii_metin = temiz_metin.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+        pdf.multi_cell(0, 5, ascii_metin)
+
     return bytes(pdf.output())
 
-# Oturum Durumu (Session State)
+# Oturum Durumu
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "sektor_bilgisi" not in st.session_state:
@@ -146,7 +157,7 @@ if "sektor_bilgisi" not in st.session_state:
 if "mecra_bilgisi" not in st.session_state:
     st.session_state.mecra_bilgisi = None
 
-# Kullanıcı Arayüzü
+# Arayüz
 col1, col2 = st.columns([1, 1])
 
 with col1:
@@ -171,7 +182,7 @@ with col1:
         image = Image.open(yuklenen_gorsel)
         st.image(image, caption="Analize Alınan Taslak", use_container_width=True)
 
-    analiz_butonu = st.button("Hukuki Muhakeme ve Emsal Analizini Başlat", type="primary")
+    analiz_butonu = st.button("Kapsamlı Hukuki Analiz ve Emsal Taramasını Başlat", type="primary")
 
 with col2:
     st.subheader("2. Hukuki Değerlendirme & Emsal Künyesi")
@@ -181,57 +192,60 @@ with col2:
         elif not reklam_metni and not yuklenen_gorsel:
             st.warning("Lütfen analiz için en az bir metin veya görsel yükleyin.")
         else:
-            with st.spinner("72 MB'lık karar arşivi taranıyor, maddi vakıa kıyası yapılıyor..."):
+            with st.spinner("Mevzuat ve 72 MB'lık karar arşivi taranıyor, hukuki muhakeme kuruluyor..."):
                 try:
                     genai.configure(api_key=api_key)
                     ilgili_emsaller = get_relevant_emsaller(reklam_metni, sektor)
                     
                     prompt = f"""
-Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisi ve Hukuki Danışmansın.
+Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisi ve Danışmansın.
 
-Aşağıda 72 MB'lık resmi karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
+Aşağıda 72 MB'lık resmi arşivden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ REKLAM KURULU EMSAL METİNLERİ ===
 {ilgili_emsaller}
 ==========================================
 
-İNCELENECEK REKLAM VAKIASI:
+İNCELENECEK REKLAM:
 Sektör: {sektor}
 Yayın Mecrası: {mecra}
 İçerik: {reklam_metni}
 
-GÖREVİN (HUKUKÇU MUHAKEMESİ):
-1. Reklamdaki iddiaların hukuki nitelendirmesini yap (sağlık beyanı, yanıltıcı etki, ispat külfeti, süperlatif iddia vb.).
-2. Arşivdeki somut kararlarla doğrudan maddi vakıa kıyası kur; Kurul'un yerleşik içtihat gerekçesini ve dosya numarasını açıkça göster.
-3. Kurul kararlarından çıkardığın hukukçu mantığıyla, markanın pazarlama gücünü koruyan ama cezai riski sıfırlayan stratejik revizyon öner.
+GÖREVİN:
+1. İLK ÖNCE: Reklamdaki tüm iddiaları yürürlükteki mevzuat ve Reklam Kurulu'nun yerleşik ilkeleri ışığında fıkra fıkra, derinlemesine ve analitik bir hukukçu muhakemesiyle değerlendir.
+2. ARDINDAN: Arşivdeki somut kararlardan tespit edilen birebir veya en yakın emsal kararları dosya numarası, karar tarihi ve uygulanan yaptırımlarla künye halinde sun.
+3. SONRASINDA: Ceza simülasyonunu, pazarlama gücünü koruyan güvenli revizyon metnini ve gerekli ispat standartlarını açıkla.
 
-RAPOR FORMATI (Eksiksiz bu başlık düzeninde oluştur):
+RAPOR FORMATI (Kesinlikle bu başlık sırasıyla yaz):
 
 ### [RİSK DERECESİ: KIRMIZI / SARI / YEŞİL] - Risk Skoru: [0-100]
 
-### 1. REKLAM KURULU EMSAL İÇTİHATLARI VE ATIFLAR
-(Arşivdeki emsal metinlerden doğrudan tespit edilen somut kararları kıyaslayarak EN AZ 2 ADET karar künyesi aktar):
+### 1. KAPSAMLI HUKUKİ VE İÇTİHAT ANALİZİ
+(Reklamdaki her bir iddiayı tek tek ele alarak; 6502 sayılı Kanun md. 61, Ticari Reklam Yönetmeliği, TİTCK Kılavuzları ve Kurul'un 'ortalama tüketici algısı' ile 'ispat külfeti' prensipleri açısından kapsamlı şekilde değerlendir):
+* **[İddia/İfade 1 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
+* **[İddia/İfade 2 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
+* **[İddia/İfade 3 Analizi]:** (Hukuki nitelendirme, ihlal edilen mevzuat hükümleri ve Kurul'un doktriner yaklaşımı)
+
+### 2. REKLAM KURULU EMSAL KARARLARI, SOMUT ATIFLAR VE OLAY ÖRNEKLERİ
+(Arşivdeki emsal metinlerden tespit edilen somut kararları kıyaslayarak EN AZ 2 ADET karar künyesini eksiksiz aktar):
 * **Emsal Karar 1:**
-  - **Dosya No & Karar Tarihi:** (Örn: Dosya No: 2023/..., Karar Tarihi: ...)
-  - **Maddi Vakıa & İhlal Konusu:** (Kurul önüne gelen benzer reklam iddiası)
-  - **Kurulun Hukuki Gerekçesi:** (Ortalama tüketici algısı, ispat yükü veya mevzuat maddesine dayalı temel gerekçe)
-  - **Uygulanan Yaptırım:** (Durdurma / ... TL İdari Para Cezası)
+  - **Dosya No & Karar Tarihi:** (Örn: Dosya No: 2023/..., Karar Tarihi: ..., Toplantı No: ...)
+  - **Maddi Vakıa & İncelenen İddialar:** (Kurul önüne gelen somut olaydaki reklam ifadeleri)
+  - **Kurulun Hüküm Gerekçesi:** (Kurulun ihlale esas aldığı temel hukuki değerlendirme)
+  - **Uygulanan Yaptırım:** (Durdurma / ... TL İdari Para Cezası / Düzeltme)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
-  - **Maddi Vakıa & İhlal Konusu:**
-  - **Kurulun Hukuki Gerekçesi:**
+  - **Maddi Vakıa & İncelenen İddialar:**
+  - **Kurulun Hüküm Gerekçesi:**
   - **Uygulanan Yaptırım:**
 
-### 2. İDARİ PARA CEZASI SİMÜLATÖRÜ (6502 SAYILI KANUN MD. 77)
-* **Mecra Bazlı Risk:** {mecra}
-* **Öngörülen İdari Para Cezası Skalası:** (İlgili mecraya göre kanuni alt ve üst ceza aralığı)
-* **Diğer Yaptırım Riski:** (Durdurma, Düzeltme, Siteden İçerik Çıkarma/Erişim Engeli)
+### 3. İDARİ PARA CEZASI SİMÜLATÖRÜ (6502 SAYILI KANUN MD. 77)
+* **Seçilen Mecra:** {mecra}
+* **Kanuni İdari Para Cezası Skalası:** (İlgili mecra için öngörülen güncel alt ve üst idari para cezası limitleri)
+* **Diğer Yaptırım Riskleri:** (Durdurma, Düzeltme, Siteden İçerik Çıkarma/Erişim Engeli Bildirimi)
 
-### 3. HUKUKİ VAKIA DEĞERLENDİRMESİ
-* (Tespit edilen hukuki risklerin mevzuat maddeleriyle fıkra fıkra analizi)
-
-### 4. İÇTİHADA UYGUN PAZARLAMA STRATEJİSİ & GÜVENLİ REVİZYON
-* **Alternatif Reklam Metni:** (Kurul'un onayladığı/ceza vermediği terminolojiye uygun, ticari cazibesini koruyan metin)
-* **İçtihat Odaklı Gerekçe & İspat Şartı:** (Kurul denetiminden geçebilmesi için gereken klinik test, tüketici araştırması veya görsel dipnot standardı)
+### 4. İÇTİHADA UYGUN GÜVENLİ PAZARLAMA STRATEJİSİ VE REVİZE METİN
+* **Revize Reklam Metni:** (Kurul içtihatlarına uygun, cezai yaptırım riskini sıfırlayan ancak ticari gücünü koruyan alternatif metin)
+* **İçtihat Odaklı Gerekçe & İspat Şartı:** (İddiaların yasal denetimden geçebilmesi için bulunması gereken klinik test, tüketici araştırması veya görsel dipnot standardı)
 
 ### 5. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Avukatlık Kanunu kapsamında hukuki mütalaa teşkil etmez."
@@ -250,11 +264,14 @@ RAPOR FORMATI (Eksiksiz bu başlık düzeninde oluştur):
 
     if st.session_state.rapor_sonucu:
         st.markdown(st.session_state.rapor_sonucu)
-        pdf_verisi = create_pdf(st.session_state.rapor_sonucu, st.session_state.sektor_bilgisi, st.session_state.mecra_bilgisi)
-        st.download_button(
-            label="📄 Emsal Kararlı & Ceza Tahminli Raporu İndir (PDF)",
-            data=pdf_verisi,
-            file_name=f"AdShield_Emsal_Ceza_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-            mime="application/pdf",
-            type="secondary"
-        )
+        try:
+            pdf_verisi = create_pdf(st.session_state.rapor_sonucu, st.session_state.sektor_bilgisi, st.session_state.mecra_bilgisi)
+            st.download_button(
+                label="📄 Emsal Kararlı & Hukuki Analiz Raporunu İndir (PDF)",
+                data=pdf_verisi,
+                file_name=f"AdShield_Hukuki_Risk_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                mime="application/pdf",
+                type="secondary"
+            )
+        except Exception as e:
+            st.warning(f"PDF oluşturulurken bir uyarı oluştu: {e}")
