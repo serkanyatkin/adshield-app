@@ -106,17 +106,27 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Aktif ve Güncel Model Listesi
-MODEL_LISTESI = [
-    "gemini-2.5-flash",
-    "gemini-2.0-flash",
-    "gemini-1.5-flash",
-    "gemini-1.5-pro"
-]
-
+# Dinamik Model Tespiti ve Güvenli Çalıştırma Motoru
 def generate_content_safe(contents, system_instruction=None):
+    if not api_key:
+        raise Exception("API anahtarı bulunamadı.")
+    
+    genai.configure(api_key=api_key)
+    
+    # 1. API anahtarında aktif olan tüm generateContent modellerini çek
+    aktif_modeller = []
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                aktif_modeller.append(m.name)
+    except Exception:
+        aktif_modeller = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash"]
+
+    # Flash modelleri önceliklendir (hızlı ve hafif oldukları için)
+    oncelikli = [m for m in aktif_modeller if "flash" in m] + [m for m in aktif_modeller if "flash" not in m]
+    
     last_err = None
-    for model_name in MODEL_LISTESI:
+    for model_name in oncelikli:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents)
@@ -125,19 +135,18 @@ def generate_content_safe(contents, system_instruction=None):
         except Exception as e:
             last_err = e
             continue
-    raise Exception(f"Tüm modeller denendi fakat yanıt alınamadı. Hata Detayı: {last_err}")
+            
+    raise Exception(f"Aktif modellerle bağlantı kurulamadı. Hata: {last_err}")
 
 def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
         return "", []
     
+    if any(sm in url.lower() for sm in ["instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com"]):
+        return "[Sosyal medya linki girildi. Güvenlik duvarı nedeniyle doğrudan taranamamaktadır; görsel ve metin üzerinden incelenecektir.]", []
+    
     clean_text = ""
     downloaded_images = []
-    
-    # Instagram ve kapalı sosyal medya platformu uyarısı
-    if "instagram.com" in url.lower() or "tiktok.com" in url.lower():
-        return "[Sosyal medya platformları doğrudan erişimi kısıtlamaktadır. İnceleme için lütfen reklam metnini veya görselini yükleyiniz.]", []
-    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
@@ -341,9 +350,12 @@ with sol_kolon:
         ])
         
         reklam_url = st.text_input(
-            "Web Sayfası / Ürün Linki (E-Ticaret siteleri için otomatik taranır)",
-            placeholder="https://www.site.com/urun..."
+            "Web Sayfası / Ürün Linki",
+            placeholder="https://www.site.com/urun veya reklam adresi..."
         )
+
+        if reklam_url and any(sm in reklam_url.lower() for sm in ["instagram.com", "tiktok.com"]):
+            st.info("Sosyal medya linkleri doğrudan bot erişimine kapalıdır. İncelemenin eksiksiz yapılması için lütfen paylaşım metnini aşağıya yapıştırınız ve görselini yükleyiniz.")
 
         reklam_metni = st.text_area(
             "Reklam Metni / Ticari İddialar / Caption",
@@ -360,8 +372,8 @@ with sol_kolon:
         if yuklenen_gorseller:
             gorsel_cols = st.columns(min(len(yuklenen_gorseller), 4))
             for idx, g_dosya in enumerate(yuklenen_gorseller):
-                g_img = Image.open(g_dosya)
-                gorsel_cols[idx % 4].image(g_img, caption=f"Yüklenen Görsel {idx+1}", use_container_width=True)
+                g_img = Image.open(g_dosya).convert("RGB")
+                gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
 
         buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
         analiz_butonu = st.button(buton_etiketi, type="primary")
@@ -381,13 +393,12 @@ with sag_kolon:
                 web_gorselleri = []
                 
                 if reklam_url:
-                    with st.spinner("Web sayfası taranıyor..."):
+                    with st.spinner("Link içeriği kontrol ediliyor..."):
                         url_metni, web_gorselleri = fetch_url_data(reklam_url)
                 
                 with st.spinner("Reklam Kurulu içtihatları ve mevzuat çerçevesinde inceleniyor..."):
                     try:
-                        genai.configure(api_key=api_key)
-                        birlestirilmis_metin = f"{reklam_metni}\n\n[Web İçeriği]: {url_metni}" if url_metni else reklam_metni
+                        birlestirilmis_metin = f"{reklam_metni}\n\n[İncelenen Link/Kaynak]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
                         ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
                         
                         if is_danisan:
@@ -495,7 +506,7 @@ RAPOR FORMATI:
                         icerik_listesi = [f"Metin: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
                         if yuklenen_gorseller:
                             for g in yuklenen_gorseller:
-                                icerik_listesi.append(Image.open(g))
+                                icerik_listesi.append(Image.open(g).convert("RGB"))
                         if web_gorselleri:
                             for wg in web_gorselleri:
                                 icerik_listesi.append(wg)
