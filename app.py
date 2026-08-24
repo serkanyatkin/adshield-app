@@ -165,7 +165,7 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Hızlı Görsel Optimizasyonu (OCR Kalitesini Korumak Şartıyla Piksel/Boyut Sıkıştırma)
+# Hızlı Görsel Optimizasyonu
 def optimize_image(img, max_dimension=1024):
     img = img.convert("RGB")
     if max(img.size) > max_dimension:
@@ -268,7 +268,6 @@ def fetch_url_data(url):
                     if len(img_urls) >= 4:
                         break
 
-                # Paralel İndirme
                 with ThreadPoolExecutor(max_workers=4) as executor:
                     results = executor.map(lambda u: download_single_img(u, headers), img_urls[:3])
                     for r in results:
@@ -308,7 +307,6 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
-# 8 Adetlik Kapsamlı İçtihat Taraması Aynen Korundu
 def get_relevant_emsaller(metin, sektor, top_k=8):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi."
@@ -631,7 +629,10 @@ RAPOR FORMATI:
                         for parca in generate_stream_safe(icerik_listesi, system_instruction=prompt):
                             tam_rapor += parca
                             rapor_alani.markdown(tam_rapor + "▌")
-                    rapor_alani.markdown(tam_rapor)
+                    
+                    # Çift basımı önlemek için canlı akış alanını temizliyoruz
+                    rapor_alani.empty()
+                    
                     st.session_state.rapor_sonucu = tam_rapor
                     st.session_state.dilekce_sonucu = None
                     st.session_state.chat_history = []
