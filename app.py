@@ -16,25 +16,34 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal B2B SaaS CSS Tasarımı
+# Kurumsal ve Ortalanmış Tasarım CSS
 st.markdown("""
 <style>
-    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
     
     * {
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     
+    /* Sayfayı Ortala ve Maksimum Genişlik Belirle */
+    .block-container {
+        max-width: 1180px !important;
+        padding-top: 1.5rem !important;
+        padding-bottom: 2.5rem !important;
+        margin: 0 auto !important;
+    }
+    
+    /* Üst Header */
     .firm-header {
         background-color: #5D728B;
-        padding: 20px 30px;
-        border-radius: 4px;
+        padding: 22px 30px;
+        border-radius: 6px;
         color: #ffffff;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 20px;
-        box-shadow: 0 4px 12px rgba(93, 114, 139, 0.15);
+        margin-bottom: 24px;
+        box-shadow: 0 4px 14px rgba(93, 114, 139, 0.18);
     }
     .firm-title {
         font-family: 'Cinzel', serif;
@@ -43,8 +52,8 @@ st.markdown("""
         font-weight: 700;
     }
     .firm-subtitle {
-        font-size: 11px;
-        letter-spacing: 1.2px;
+        font-size: 11.5px;
+        letter-spacing: 1px;
         color: #DCE4EC;
         margin-top: 3px;
     }
@@ -55,10 +64,19 @@ st.markdown("""
         font-size: 11px;
         font-weight: 600;
         padding: 6px 14px;
-        border-radius: 2px;
+        border-radius: 4px;
         letter-spacing: 0.8px;
     }
 
+    /* Mod Seçici Konteyneri */
+    .mode-container {
+        background: #F8FAFC;
+        border: 1px solid #E2E8F0;
+        border-radius: 8px;
+        padding: 16px 20px;
+        margin-bottom: 24px;
+    }
+    
     .section-heading {
         font-family: 'Cinzel', serif;
         font-size: 14px;
@@ -70,12 +88,13 @@ st.markdown("""
         padding-bottom: 6px;
     }
 
+    /* Buton Tasarımı */
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
         font-family: 'Plus Jakarta Sans', sans-serif !important;
         letter-spacing: 0.5px !important;
-        border-radius: 3px !important;
+        border-radius: 4px !important;
         border: 1px solid #4D6076 !important;
         padding: 12px 24px !important;
         font-weight: 600 !important;
@@ -89,7 +108,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Üst Başlık Banner
+# Üst Header
 st.markdown("""
 <div class="firm-header" lang="tr">
     <div>
@@ -106,7 +125,7 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Dinamik Model Tespiti ve Güvenli Çalıştırma
+# Dinamik Model Tespiti ve Fallback Mekanizması
 def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -309,22 +328,25 @@ if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
     st.session_state.dilekce_sonucu = None
-if "aktif_mod" not in st.session_state:
-    st.session_state.aktif_mod = "ic_denetim"
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Mod Seçimi (Kurumsal Terminoloji)
-mod_secimi = st.radio(
-    "İnceleme Kapsamı",
-    ["Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim Modu)", 
-     "Piyasa ve Rakip Reklam İncelemesi (Şikayet ve İhbar Modu)"],
-    horizontal=True
-)
+# Belirgin Mod Seçim Alanı
+with st.container():
+    st.markdown('<div class="section-heading" style="border:none; margin-bottom:8px;">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
+    mod_secimi = st.radio(
+        "Denetim Modu",
+        [
+            "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)",
+            "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)"
+        ],
+        horizontal=True,
+        label_visibility="collapsed"
+    )
 
 is_danisan = "İç Denetim" in mod_secimi
-st.session_state.aktif_mod = "ic_denetim" if is_danisan else "rakip"
 
+# İki Kolonlu Panel Düzeni
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 with sol_kolon:
@@ -349,16 +371,16 @@ with sol_kolon:
         
         reklam_url = st.text_input(
             "Web Sayfası / Ürün Linki",
-            placeholder="https://www.site.com/urun veya reklam adresi..."
+            placeholder="https://www.site.com/urun veya kampanya adresi..."
         )
 
         if reklam_url and any(sm in reklam_url.lower() for sm in ["instagram.com", "tiktok.com"]):
-            st.info("Sosyal medya linkleri doğrudan bot erişimine kapalıdır. İncelemenin eksiksiz yapılması için lütfen paylaşım metnini aşağıya yapıştırınız ve görselini yükleyiniz.")
+            st.info("Sosyal medya linkleri doğrudan bot erişimine kapalıdır. İncelemenin eksiksiz yapılması için lütfen metni aşağıya yapıştırınız ve görseli yükleyiniz.")
 
         reklam_metni = st.text_area(
             "Reklam Metni / Ticari İddialar / Caption",
             height=130,
-            placeholder="İncelenmesi talep edilen reklam metnini veya iddiaları giriniz..."
+            placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz..."
         )
         
         yuklenen_gorseller = st.file_uploader(
@@ -401,7 +423,7 @@ with sag_kolon:
                         
                         if is_danisan:
                             prompt = f"""
-Sen reklam hukuku, tüketici mevzuatı ve haksız ticari uygulamalar denetimi konusunda uzmanlaşmış kıdemli bir Kurumsal Reklam Uyum Denetçisisin.
+Sen reklam mevzuatı ve haksız ticari uygulamalar denetimi konusunda uzmanlaşmış kıdemli bir Kurumsal Reklam Uyum Denetçisisin.
 Şirket yönetimimiz, planlanan reklam taslağının (metinler, yüklenen görseller veya web sayfasındaki afiş/ürün ambalajları) Reklam Kurulu denetimlerinden idari yaptırım almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
 
 Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
