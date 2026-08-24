@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal CSS Tasarımı
+# Kurumsal CSS Tasarımı (CSS Uppercase Kaldırıldı, Türkçe Uyumlu Tipografi)
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
@@ -39,15 +39,13 @@ st.markdown("""
     .firm-title {
         font-family: 'Cinzel', serif;
         font-size: 20px;
-        letter-spacing: 2px;
+        letter-spacing: 1.5px;
         font-weight: 700;
-        text-transform: uppercase;
     }
     .firm-subtitle {
         font-size: 11px;
-        letter-spacing: 1.5px;
+        letter-spacing: 1.2px;
         color: #DCE4EC;
-        text-transform: uppercase;
         margin-top: 3px;
     }
     .firm-badge {
@@ -58,15 +56,13 @@ st.markdown("""
         font-weight: 600;
         padding: 6px 14px;
         border-radius: 2px;
-        letter-spacing: 1px;
-        text-transform: uppercase;
+        letter-spacing: 0.8px;
     }
 
     .section-heading {
         font-family: 'Cinzel', serif;
         font-size: 14px;
-        letter-spacing: 1.5px;
-        text-transform: uppercase;
+        letter-spacing: 1px;
         color: #2C3848;
         font-weight: 700;
         margin-bottom: 14px;
@@ -77,9 +73,8 @@ st.markdown("""
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
-        font-family: 'Cinzel', serif !important;
-        letter-spacing: 1.5px !important;
-        text-transform: uppercase !important;
+        font-family: 'Plus Jakarta Sans', sans-serif !important;
+        letter-spacing: 0.5px !important;
         border-radius: 3px !important;
         border: 1px solid #4D6076 !important;
         padding: 12px 24px !important;
@@ -96,9 +91,9 @@ st.markdown("""
 
 # Üst Başlık
 st.markdown("""
-<div class="firm-header">
+<div class="firm-header" lang="tr">
     <div>
-        <div class="firm-title">Sezer Kara Hukuk Bürosu</div>
+        <div class="firm-title">SEZER KARA HUKUK BÜROSU</div>
         <div class="firm-subtitle">Reklam Kurulu İçtihat & Risk Denetim Sistemi</div>
     </div>
     <div class="firm-badge">Reklam ve Rekabet Hukuku Departmanı</div>
@@ -111,7 +106,6 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Çoklu Model & Fallback Yönetimi
 MODEL_LISTESI = [
     "gemini-2.5-flash",
     "gemini-1.5-flash",
@@ -135,15 +129,6 @@ def generate_content_safe(contents, system_instruction=None):
             else:
                 raise e
     raise Exception(f"Dakikalık API kotası aşıldı. Lütfen 30-40 saniye sonra tekrar deneyiniz. Detay: {last_err}")
-
-# Türkçe Harf Desteği Fonksiyonları
-def tr_upper(text):
-    if not text:
-        return ""
-    mapping = {"i": "İ", "ı": "I", "ğ": "Ğ", "ü": "Ü", "ş": "Ş", "ö": "Ö", "ç": "Ç"}
-    for k, v in mapping.items():
-        text = text.replace(k, v)
-    return text.upper()
 
 def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
@@ -336,7 +321,7 @@ sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 with sol_kolon:
     with st.container(border=True):
         panel_sol_baslik = "İncelenecek Reklam Parametreleri" if is_danisan else "İncelenecek Rakip Materyali"
-        st.markdown(f'<div class="section-heading">{panel_sol_baslik}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-heading" lang="tr">{panel_sol_baslik}</div>', unsafe_allow_html=True)
 
         sektor = st.selectbox("Faaliyet Sektörü", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
@@ -382,7 +367,7 @@ with sol_kolon:
 with sag_kolon:
     with st.container(border=True):
         panel_baslik = "Hukuki Uyum ve Güvenli Revizyon Raporu" if is_danisan else "Rakip İhlal Tespiti ve Şikayet Merkezi"
-        st.markdown(f'<div class="section-heading">{panel_baslik}</div>', unsafe_allow_html=True)
+        st.markdown(f'<div class="section-heading" lang="tr">{panel_baslik}</div>', unsafe_allow_html=True)
         
         if analiz_butonu:
             if not api_key:
@@ -564,7 +549,7 @@ Aşağıda incelenen rakip iletişim vakıası ve tespit edilen mevzuat aykırı
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Yapay zeka robotik şablonlarından (örn: '1. MADDİ VAKIALAR', '2. HUKUKİ DELİLLER' gibi soyut kalıplardan) tamamen uzak; Türk idari ve tüketici yargısı pratiğinde tecrübeli bir avukatın kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+Yapay zeka robotik şablonlarından tamamen uzak; Türk idari ve tüketici yargısı pratiğinde tecrübeli bir avukatın kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
 
 DİLEKÇEYİ AYNEN AŞAĞIDAKİ YAPI VE DİLDE OLUŞTUR:
 
@@ -623,7 +608,7 @@ Sezer Kara Hukuk Bürosu
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
-        st.markdown('<div class="section-heading">Hukuki Danışman ve Soru-Cevap</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading" lang="tr">Hukuki Danışman ve Soru-Cevap</div>', unsafe_allow_html=True)
         st.caption("Üretilen rapora, emsal dosyalara veya stratejik adımlara ilişkin sorularınızı iletebilirsiniz.")
 
         for msg in st.session_state.chat_history:
