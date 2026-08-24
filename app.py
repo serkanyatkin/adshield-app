@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal CSS Tasarımı (CSS Uppercase Kaldırıldı, Türkçe Uyumlu Tipografi)
+# Kurumsal CSS Tasarımı
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
@@ -106,11 +106,12 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
+# Aktif ve Güncel Model Listesi
 MODEL_LISTESI = [
     "gemini-2.5-flash",
-    "gemini-1.5-flash",
     "gemini-2.0-flash",
-    "gemini-3.6-flash"
+    "gemini-1.5-flash",
+    "gemini-1.5-pro"
 ]
 
 def generate_content_safe(contents, system_instruction=None):
@@ -122,13 +123,9 @@ def generate_content_safe(contents, system_instruction=None):
             if response and response.text:
                 return response.text
         except Exception as e:
-            err_str = str(e)
-            if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
-                last_err = e
-                continue
-            else:
-                raise e
-    raise Exception(f"Dakikalık API kotası aşıldı. Lütfen 30-40 saniye sonra tekrar deneyiniz. Detay: {last_err}")
+            last_err = e
+            continue
+    raise Exception(f"Tüm modeller denendi fakat yanıt alınamadı. Hata Detayı: {last_err}")
 
 def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
@@ -136,6 +133,11 @@ def fetch_url_data(url):
     
     clean_text = ""
     downloaded_images = []
+    
+    # Instagram ve kapalı sosyal medya platformu uyarısı
+    if "instagram.com" in url.lower() or "tiktok.com" in url.lower():
+        return "[Sosyal medya platformları doğrudan erişimi kısıtlamaktadır. İnceleme için lütfen reklam metnini veya görselini yükleyiniz.]", []
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
     }
@@ -339,18 +341,18 @@ with sol_kolon:
         ])
         
         reklam_url = st.text_input(
-            "Web Sayfası / Ürün / Reklam Linki (Görseller ve Metin Otomatik Taranır)",
-            placeholder="https://www.site.com/urun veya reklam URL'si..."
+            "Web Sayfası / Ürün Linki (E-Ticaret siteleri için otomatik taranır)",
+            placeholder="https://www.site.com/urun..."
         )
 
         reklam_metni = st.text_area(
-            "Reklam Metni / Ticari İddialar",
+            "Reklam Metni / Ticari İddialar / Caption",
             height=130,
-            placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz..."
+            placeholder="İncelenmesi talep edilen reklam metnini veya iddiaları giriniz..."
         )
         
         yuklenen_gorseller = st.file_uploader(
-            "Manuel Reklam Görselleri / Taslaklar (Çoklu Yükleme)",
+            "Reklam Görselleri / Taslaklar / Ekran Görüntüleri (Çoklu Yükleme)",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True
         )
@@ -379,10 +381,10 @@ with sag_kolon:
                 web_gorselleri = []
                 
                 if reklam_url:
-                    with st.spinner("Web sayfası taranıyor; ürün metinleri ve görselleri indiriliyor..."):
+                    with st.spinner("Web sayfası taranıyor..."):
                         url_metni, web_gorselleri = fetch_url_data(reklam_url)
                 
-                with st.spinner("Reklam Kurulu içtihatları ve görsel/metin iddiaları inceleniyor..."):
+                with st.spinner("Reklam Kurulu içtihatları ve mevzuat çerçevesinde inceleniyor..."):
                     try:
                         genai.configure(api_key=api_key)
                         birlestirilmis_metin = f"{reklam_metni}\n\n[Web İçeriği]: {url_metni}" if url_metni else reklam_metni
