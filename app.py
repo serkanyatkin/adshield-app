@@ -16,7 +16,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal ve Ortalanmış Tasarım CSS
+# Kurumsal, Ortalanmış ve Alan Seçimli CSS Tasarımı
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -25,7 +25,7 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     
-    /* Sayfayı Ortala ve Maksimum Genişlik Belirle */
+    /* Sayfayı Ortala */
     .block-container {
         max-width: 1180px !important;
         padding-top: 1.5rem !important;
@@ -68,15 +68,61 @@ st.markdown("""
         letter-spacing: 0.8px;
     }
 
-    /* Mod Seçici Konteyneri */
-    .mode-container {
-        background: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-radius: 8px;
-        padding: 16px 20px;
-        margin-bottom: 24px;
+    /* Ortalanmış Mod Başlığı */
+    .mode-header-title {
+        text-align: center;
+        font-family: 'Cinzel', serif;
+        font-size: 14.5px;
+        letter-spacing: 1.5px;
+        color: #2C3848;
+        font-weight: 700;
+        margin-bottom: 14px;
+        text-transform: uppercase;
     }
-    
+
+    /* Yuvarlak Butonları Gizle ve Kart Segment Haline Getir */
+    div[data-testid="stRadio"] > div[role="radiogroup"] {
+        display: flex;
+        justify-content: center;
+        gap: 16px;
+        width: 100%;
+        margin-bottom: 12px;
+    }
+
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label {
+        flex: 1;
+        background: #FFFFFF;
+        border: 1.5px solid #CBD5E1;
+        border-radius: 6px;
+        padding: 16px 20px;
+        cursor: pointer;
+        transition: all 0.2s ease;
+        text-align: center;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        box-shadow: 0 1px 3px rgba(0,0,0,0.03);
+    }
+
+    /* Yuvarlak radyo simgesini gizle */
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {
+        display: none !important;
+    }
+
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover {
+        border-color: #5D728B;
+        background: #F8FAFC;
+    }
+
+    /* Seçili kart stili */
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
+        border-color: #5D728B !important;
+        background-color: #F1F5F9 !important;
+        box-shadow: 0 0 0 1px #5D728B, 0 4px 10px rgba(93, 114, 139, 0.12) !important;
+        font-weight: 600 !important;
+        color: #1E293B !important;
+    }
+
     .section-heading {
         font-family: 'Cinzel', serif;
         font-size: 14px;
@@ -88,7 +134,6 @@ st.markdown("""
         padding-bottom: 6px;
     }
 
-    /* Buton Tasarımı */
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
@@ -125,7 +170,6 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Dinamik Model Tespiti ve Fallback Mekanizması
 def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -331,22 +375,22 @@ if "dilekce_sonucu" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Belirgin Mod Seçim Alanı
-with st.container():
-    st.markdown('<div class="section-heading" style="border:none; margin-bottom:8px;">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
-    mod_secimi = st.radio(
-        "Denetim Modu",
-        [
-            "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)",
-            "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)"
-        ],
-        horizontal=True,
-        label_visibility="collapsed"
-    )
+# Ortalanmış Başlık ve Alan İşaretli Seçim Kartları
+st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
+
+mod_secimi = st.radio(
+    "Denetim Modu",
+    [
+        "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)",
+        "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)"
+    ],
+    horizontal=True,
+    label_visibility="collapsed"
+)
 
 is_danisan = "İç Denetim" in mod_secimi
 
-# İki Kolonlu Panel Düzeni
+# İki Kolonlu Panel
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 with sol_kolon:
