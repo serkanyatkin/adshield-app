@@ -25,7 +25,6 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     
-    /* Sayfayı Ortala */
     .block-container {
         max-width: 1180px !important;
         padding-top: 1.5rem !important;
@@ -33,7 +32,6 @@ st.markdown("""
         margin: 0 auto !important;
     }
     
-    /* Üst Header */
     .firm-header {
         background-color: #5D728B;
         padding: 22px 30px;
@@ -68,7 +66,6 @@ st.markdown("""
         letter-spacing: 0.8px;
     }
 
-    /* Ortalanmış Mod Başlığı */
     .mode-header-title {
         text-align: center;
         font-family: 'Cinzel', serif;
@@ -80,7 +77,6 @@ st.markdown("""
         text-transform: uppercase;
     }
 
-    /* Yuvarlak Butonları Gizle ve Kart Segment Haline Getir */
     div[data-testid="stRadio"] > div[role="radiogroup"] {
         display: flex;
         justify-content: center;
@@ -104,7 +100,6 @@ st.markdown("""
         box-shadow: 0 1px 3px rgba(0,0,0,0.03);
     }
 
-    /* Yuvarlak radyo simgesini gizle */
     div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {
         display: none !important;
     }
@@ -114,7 +109,6 @@ st.markdown("""
         background: #F8FAFC;
     }
 
-    /* Seçili kart stili */
     div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
         border-color: #5D728B !important;
         background-color: #F1F5F9 !important;
@@ -281,7 +275,7 @@ def get_relevant_emsaller(metin, sektor, top_k=8):
         return "Karar arşivi yüklenemedi."
     
     sektor_keywords = {
-        "Kozmetik & Kişisel Bakım / Anne-Bebek": ["kozmetik", "doğal", "bitkisel", "organik", "cilt", "leke", "kırışıklık", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik"],
+        "Kozmetik & Kişisel Bakım / Anne-Bebek": ["kozmetik", "doğal", "bitkisel", "organik", "cilt", "leke", "kırışıklık", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik", "sls", "paraben", "içermez", "pişik"],
         "Takviye Edici Gıda & Sağlık": ["takviye", "gıda", "sağlık beyanı", "tedavi", "hastalık", "kilo", "zayıflama", "bağışıklık", "eklem", "ağrı", "şifa", "onay", "kesin son", "iltihap"],
         "E-Ticaret & İndirim Kampanyaları": ["indirim", "fiyat", "en ucuz", "tavsiye edilen", "stok", "bedava", "en çok satan", "fiyatı düştü", "efsane", "tükeniyor"],
         "Sosyal Medya & Influencer Reklamları": ["influencer", "işbirliği", "etiket", "örtülü reklam", "sosyal medya", "tanıtım", "link", "ortaklık", "sponsor", "reklam"]
@@ -408,6 +402,7 @@ with sol_kolon:
         
         mecra = st.selectbox("Yayınlanacak / Yayınlanan Mecra", [
             "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)",
+            "Satış Noktası (Eczane/Market Stantları, POS Materyali)",
             "Ulusal Televizyon Kanalı",
             "Yerel Televizyon / Radyo",
             "Açık Hava (Billboard, Broşür vb.)"
@@ -428,7 +423,7 @@ with sol_kolon:
         )
         
         yuklenen_gorseller = st.file_uploader(
-            "Reklam Görselleri / Taslaklar / Ekran Görüntüleri (Çoklu Yükleme)",
+            "Reklam Görselleri / Taslaklar / Stant & Ambalaj Fotoğrafları (Çoklu Yükleme)",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True
         )
@@ -460,36 +455,59 @@ with sag_kolon:
                     with st.spinner("Link içeriği kontrol ediliyor..."):
                         url_metni, web_gorselleri = fetch_url_data(reklam_url)
                 
-                with st.spinner("Reklam Kurulu içtihatları ve mevzuat çerçevesinde inceleniyor..."):
+                with st.spinner("Materyaller mikro düzeyde taranıyor ve emsal içtihatlar inceleniyor..."):
                     try:
                         birlestirilmis_metin = f"{reklam_metni}\n\n[İncelenen Link/Kaynak]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
                         ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
                         
-                        if is_danisan:
-                            prompt = f"""
-Sen reklam mevzuatı ve haksız ticari uygulamalar denetimi konusunda uzmanlaşmış kıdemli bir Kurumsal Reklam Uyum Denetçisisin.
-Şirket yönetimimiz, planlanan reklam taslağının (metinler, yüklenen görseller veya web sayfasındaki afiş/ürün ambalajları) Reklam Kurulu denetimlerinden idari yaptırım almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
+                        # DERİNLEMESİNE (FLASH UZATILMIŞ) ANALİZ PROTOKOLÜ
+                        sistem_metodolojisi = f"""
+SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, 6502 SAYILI TÜKETİCİNİN KORUNMASI HAKKINDA KANUN (MD. 61 & 77), TİCARİ REKLAM VE HAKSIZ TİCARİ UYGULAMALAR YÖNETMELİĞİ, TİTCK KOZMETİK İDDİALARI KILAVUZU (SÜRÜM 2.0), TGK GIDA VE TAKVİYE EDİCİ GIDA MEVZUATI İLE TÜRK TİCARET KANUNU (MD. 54-55 HAKSIZ REKABET) ALANINDA UZMANLAŞMIŞ KIDEMLİ BİR REKLAM HUKUKU VE REGÜLASYON BAŞDENETÇİSİSİN.
 
-Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
-=== RESMİ EMSAL METİNLERİ ===
+ANALİZ PROTOKOLÜ VE BÜTÜNCÜL TARAMA METODOLOJİSİ:
+
+ADIM 1 - TAM VE ÖNYARGISIZ GÖRSEL/METİN AYRIŞTIRMA (OCR & ELEMAN TESPİTİ):
+Yüklenen görselleri ve metinleri sadece ana manşetle sınırlı kalmadan uçtan uca ayrıştır. Özellikle:
+- Afiş ve stant başlıkları, alt sloganlar,
+- Ürün kutusu ve ambalajı üzerindeki tüm okunabilir ibareler,
+- Tüm simgeler, amblemler ve mikro rozetler (Örn: 'içermez / free-from' rozetleri, 'organik / doğal' mühürleri, 'klinik test' ibareleri),
+- Yüzde, süre ve rakamsal oranlar (Örn: '%X oranında', 'X saatte / X günde', 'X yıllık tecrübe'),
+- Küçük puntolu yasal şerhler ve yıldızlı açıklamalar.
+
+ADIM 2 - MEVZUAT TAKSONOMİSİ ÜZERİNDEN ÇAPRAZ HUKUKİ DENETİM:
+Ayrıştırılan her bir unsuru aşağıdaki 6 evrensel mevzuat filtresine tabi tut:
+1. Muhteviyat / 'İçermez' (Free-from) İddiaları: Ürün grubunun doğası gereği zaten bulunmaması veya bulunması gereken standart bir bileşenin özel bir üstünlük gibi sunulup sunulmadığı (TİTCK / TGK Kılavuzları).
+2. Tıbbi / İyileştirici / Kesin Sonuç Vaatleri: Kozmetik-ilaç ayrımını aşan tedavi algısı, kesinlik ('yok eder', 'bitirir', 'kesin son') bildiren ifadeler.
+3. Pazar Üstünlüğü ve Süperlatifler: Bağımsız pazar araştırması gerektiren 'en', 'tek', '1 numara', 'lider' gibi kıyaslamalar.
+4. Otorite & Güvenilirlik İddiaları: Hekim/uzman tavsiyesi, izin/onay algısı oluşturan beyanlar.
+5. Süre & Hız Garantileri: Klinik testlerle ispatı imkansız acil/kesin süre vaatleri ('3 günde', 'anında').
+6. Fiyat, Kampanya ve Stok Yönlendirmeleri: Referans fiyat kuralları ve yapay aciliyet algısı.
+
+=== EMSAL REKLAM KURULU KÜLLİYATI ===
 {ilgili_emsaller}
-=============================
+======================================
 
-İNCELENEN KAMPANYA TASLAĞI:
-Sektör: {sektor}
-Mecra: {mecra}
-İçerik: {birlestirilmis_metin}
-(Görseller üzerindeki tüm metin, logo ve ambalaj iddialarını da doğrudan incele)
+İNCELENEN VAKIA BİLGİLERİ:
+- Sektör: {sektor}
+- Yayın Mecrası: {mecra}
+- Metin/İddialar: {birlestirilmis_metin}
+"""
+
+                        if is_danisan:
+                            prompt = sistem_metodolojisi + f"""
+GÖREVİN:
+İç denetim ve risk yönetimi amacıyla, kampanyanın tüm iddialarını (büyük manşetlerden en küçük ambalaj rozetlerine kadar) derinlemesine denetleyen, mevzuat gerekçelerini somutlaştıran ve CEZAİ RİSKİ SIFIRLAYAN GÜVENLİ REVİZYON METİNLERİ sunan kapsamlı bir 'Mevzuat Uyum ve Revizyon Raporu' hazırlamaktır.
 
 RAPOR FORMATI:
 
 ### [RİSK DERECESİ: YÜKSEK (KIRMIZI) / ORTA (SARI) / DÜŞÜK (YEŞİL)] - Risk Skoru: [0-100]
 
-### I. MEVZUAT UYUM ANALİZİ VE RİSKLİ İFADELER
-(Taslak metindeki ve görsellerdeki riskli iddiaları tek tek ayıkla. 6502 md. 61, Ticari Reklam Yönetmeliği, TİTCK/TGK Kılavuzları açısından açıkla):
-* **[Riskli İfade 1]:** (Neden mevzuata aykırı? Kurul'un ortalama tüketici algısı ve ispat yükü yaklaşımı nedir?)
-* **[Riskli İfade 2]:**
-* **[Riskli İfade 3]:**
+### I. MEVZUAT UYUM ANALİZİ VE TESPİT EDİLEN RİSKLİ İDDİALAR
+(Görseldeki ve metindeki TÜM iddiaları -başlıklar, ambalaj yazıları ve mikro rozetler dahil- tek tek maddeleştirerek açıkla):
+* **[Tespit Edilen İddia / Rozet / İfade 1]:** (Hangi mevzuat maddesini ihlal ediyor? Ortalama tüketici algısı ve ispat yükü nedir?)
+* **[Tespit Edilen İddia / Rozet / İfade 2]:**
+* **[Tespit Edilen İddia / Rozet / İfade 3]:**
+* **[Tespit Edilen İddia / Rozet / İfade 4]:**
 
 ### II. REKLAM KURULU EMSAL KARARLARI VE CEZA EŞLEŞMELERİ
 (Arşivdeki emsal metinlerden tespit edilen somut kararlardan EN AZ 2 ADET karar künyesini şu formatta ver):
@@ -497,50 +515,42 @@ RAPOR FORMATI:
   - **Dosya No & Karar Tarihi:**
   - **Firma / Mecra:** 
   - **Kararda Ceza Alan Orijinal İfade:**
-  - **Taslağımızla Benzerliği:**
+  - **İncelenen Materyalle Somut Kıyas:**
   - **Uygulanan Yaptırım:** (Durdurma ve ... TL İdari Para Cezası)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
   - **Firma / Mecra:** 
   - **Kararda Ceza Alan Orijinal İfade:**
-  - **Taslağımızla Benzerliği:**
+  - **İncelenen Materyalle Somut Kıyas:**
   - **Uygulanan Yaptırım:**
 
 ### III. ÖNGÖRÜLEN İDARİ PARA CEZASI VE RİSK SKALASI
 * **Yayın Mecrası:** {mecra}
 * **6502 Sayılı Kanun Md. 77 Ceza Aralığı:** (Mecraya göre geçerli idari para cezası limitleri)
-* **Diğer Riskler:** (Durdurma, düzeltme, erişim engeli/içerik çıkarma riski)
+* **Diğer Yaptırımlar:** (Durdurma, düzeltme, satış noktasından toplatma veya içerik çıkarma riski)
 
 ### IV. GÜVENLİ VE TİCARİ ETKİSİ YÜKSEK REVİZE METİN
-* **Önerilen Güvenli Reklam Metni:** (Cezai riski sıfırlayan ancak reklamın satış gücünü koruyan alternatif metin)
-* **Gereken İspat / Dipnot Standartları:** (Hazır bulundurulması gereken test raporu veya görsel altı yasal dipnot)
+* **Önerilen Güvenli Reklam Metni & Rozet Alternatifleri:** (Cezai riski sıfırlayan ancak reklamın satış gücünü koruyan alternatifler)
+* **Gereken İspat / Dipnot Standartları:** (Hazır bulundurulması gereken test raporları veya ambalaj altı yasal dipnot standardı)
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
                         else:
-                            prompt = f"""
-Sen haksız rekabet, piyasa denetimi ve tüketici mevzuatı alanında uzmanlaşmış kıdemli bir Kurumsal Uyum ve Rekabet Denetçisisin.
-Pazardaki bir rakip ürünün / tanıtımın (metin, web sayfası veya görseller üzerindeki ambalaj/banner iddialarının) mevzuata aykırı olduğunu, tüketiciyi aldattığını ve haksız rekabet yarattığını tespit etmek amacıyla detaylı bir ihlal raporu hazırlamaktasın.
-
-Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
-=== RESMİ EMSAL METİNLERİ ===
-{ilgili_emsaller}
-=============================
-
-İNCELENEN RAKİP İLETİŞİM:
-Sektör: {sektor}
-Mecra: {mecra}
-İçerik: {birlestirilmis_metin}
+                            prompt = sistem_metodolojisi + f"""
+GÖREVİN:
+Pazardaki rakip tanıtımın veya satış noktası materyalinin içerdiği TÜM hukuka aykırılıkları (büyük slogandan en küçük 'içermez' rozetine veya ambalaj vaadine kadar) tek tek deşifre eden, haksız rekabet ve tüketici aldatmacasını kanıtlayan derinlemesine bir 'Piyasa İhlal Raporu' hazırlamaktır.
 
 RAPOR FORMATI:
 
 ### [İHLAL DERECESİ: AĞIR (KIRMIZI) / ORTA (SARI) / HAFİF (YEŞİL)] - İhlal Skoru: [0-100]
 
 ### I. HAKSIZ REKABET VE MEVZUATA AYKIRILIK TESPİTİ
-(Rakip tanıtımdaki ve görsellerdeki hukuka aykırı unsurları; 6502 md. 61, TTK md. 54-55 Haksız Rekabet ve Kılavuz hükümleri çerçevesinde tek tek gerekçelendir):
-* **[Hukuka Aykırı İfade / Uygulama 1]:** (Haksız ticari uygulama ve yanıltıcı niteliği)
-* **[Hukuka Aykırı İfade / Uygulama 2]:**
+(Materyaldeki TÜM unsurları -ana slogan, ambalaj iddiaları, mikro rozetler ve içerik beyanları- 6502 md. 61, TTK md. 54-55 ve Kılavuzlar kapsamında ayrı ayrı gerekçelendir):
+* **[Hukuka Aykırı İfade / Rozet / Uygulama 1]:** (Haksız ticari uygulama ve yanıltıcı niteliği)
+* **[Hukuka Aykırı İfade / Rozet / Uygulama 2]:**
+* **[Hukuka Aykırı İfade / Rozet / Uygulama 3]:**
+* **[Hukuka Aykırı İfade / Rozet / Uygulama 4]:**
 
 ### II. REKLAM KURULU EMSAL İÇTİHATLARI
 (Rakibin kullandığı ifadelere benzer iddialara Kurul'un daha önce verdiği EN AZ 2 ADET emsal kararı künyesiyle sun):
@@ -548,26 +558,28 @@ RAPOR FORMATI:
   - **Dosya No & Karar Tarihi:**
   - **Ceza Alan Şirket / Mecra:**
   - **Karardaki Yasaklı Orijinal İfade:**
+  - **İncelenen Materyalle Somut Kıyas:**
   - **Uygulanan Yaptırım:** (Durdurma ve ... TL İdari Para Cezası)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
   - **Ceza Alan Şirket / Mecra:**
   - **Karardaki Yasaklı Orijinal İfade:**
+  - **İncelenen Materyalle Somut Kıyas:**
   - **Uygulanan Yaptırım:**
 
 ### III. RAKİBE UYGULANABİLECEK İDARİ YAPTIRIMLAR
 * **6502 Sayılı Kanun Md. 77 Para Cezası:** (Mecraya göre uygulanacak ceza tutarı)
-* **İdari Tedbirler:** (Reklamı durdurma, düzeltme, internetten içerik çıkarma / erişim engeli)
+* **İdari Tedbirler:** (Reklamı durdurma, düzeltme, stant/materyallerin toplatılması, içerik çıkarma / erişim engeli)
 
 ### IV. ŞİKAYET VE BAŞVURU STRATEJİSİ
-* **Reklam Kurulu Başvuru Dayanakları:** (Dilekçede öne çıkarılacak en güçlü argümanlar)
-* **Gereken Delil Tespiti:** (Noter tespiti, URL kaydı, arşiv kaydı vb.)
+* **Reklam Kurulu Başvuru Dayanakları:** (Dilekçede öne çıkarılacak en güçlü argümanlar ve teknik savunma hattı)
+* **Gereken Delil Tespiti:** (Noter tespiti, stant fotoğrafları, URL kaydı, arşiv tespiti vb.)
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
                         
-                        icerik_listesi = [f"Metin: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
+                        icerik_listesi = [f"Metin/Parametreler: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
                         if yuklenen_gorseller:
                             for g in yuklenen_gorseller:
                                 icerik_listesi.append(Image.open(g).convert("RGB"))
@@ -619,14 +631,14 @@ RAPOR FORMATI:
                         with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
                             try:
                                 dilekce_prompt = f"""
-Sen tüketici hukuku ve reklam regülasyonları konusunda deneyimli bir Hukuk Müşavirisin.
-Aşağıda incelenen rakip iletişim vakıası ve tespit edilen mevzuat aykırılıkları yer almaktadır:
+Sen tüketici hukuku, haksız rekabet ve reklam regülasyonları konusunda uzmanlaşmış kıdemli bir Hukuk Müşavirisin.
+Aşağıda incelenen rakip iletişim vakıası, tespit edilen ihlaller (büyük sloganlar, ambalaj iddiaları ve mikro rozetler) ve emsal veriler yer almaktadır:
 
 İNCELEME RAPORU VE VAKIA VERİSİ:
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Yapay zeka robotik şablonlarından tamamen uzak; doğrudan Türk idari yargı ve Reklam Kurulu pratiğine uygun, **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+Yapay zeka robotik şablonlarından (örn: '1. MADDİ VAKIALAR', '2. HUKUKİ DELİLLER' gibi soyut kalıplardan) tamamen uzak; Türk idari yargı ve Reklam Kurulu pratiğinde tecrübeli bir hukukçunun kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net, akıcı ve 4 ana maddeden oluşan bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
 
 DİLEKÇEYİ AYNEN AŞAĞIDAKİ YAPI VE DİLDE OLUŞTUR:
 
@@ -639,17 +651,17 @@ ADRES : [Şirket Adresi]
 YETKİLİ / VEKİL : [Şirket Temsilcisi / Hukuk Müşaviri / Vekil]
 ŞİKAYET EDİLEN : [Şikayet Edilen Firma / Satıcı / Hesap Bilgisi]
 ADRES : [Şikayet Edilen Adres / İnternet Sitesi / Mecra]
-ŞİKAYET KONUSU : Şikayet edilen tarafça yürütülen tanıtımlarda yer alan tüketiciyi yanıltıcı, haksız rekabete yol açıcı ve mevzuata aykırı nitelikteki iddialar nedeniyle idari yaptırım uygulanması ve anılan reklamların durdurulması talebidir.
+ŞİKAYET KONUSU : Şikayet edilen tarafça yürütülen tanıtımlarda yer alan tüketiciyi yanıltıcı, haksız rekabete yol açıcı ve mevzuata aykırı nitelikteki iddialar (özellikle ana başlıklar, ambalaj vaatleri ve 'içermez' rozetleri) nedeniyle idari yaptırım uygulanması ve anılan reklamların durdurulması talebidir.
 
 AÇIKLAMALAR:
 
-1. [ŞİKAYET EDİLENİN REKLAM VE AMBALAJLARDA KULLANDIĞI SOMUT İDDİANIN YANILTICI NİTELİĞİNİ ANLATAN TAM BİR CÜMLE BAŞLIK]:
-(Şikayet edilenin ürün tanıtımında, sosyal medyada veya ambalajda hangi somut iddia ve ifadeleri kullandığı, bu tanıtımın nerede tespit edildiği ve ortalama tüketici nezdinde nasıl haksız bir algı yarattığı).
+1. [ŞİKAYET EDİLENİN TANITIM, STAND VE AMBALAJLARDA KULLANDIĞI SOMUT İDDİALARIN YANILTICI NİTELİĞİNİ ANLATAN TAM BİR CÜMLE BAŞLIK]:
+(Şikayet edilenin tanıtımlarında hangi somut iddiaları, tırnak içi ifadeleri ve rozetleri kullandığı, bu tanıtımın nerede tespit edildiği ve ortalama tüketici nezdinde nasıl haksız bir algı yarattığı).
 
-2. [İNCELENEN ÜRÜN KATEGORİSİNİN BİLİMSEL / SEKTÖREL GERÇEKLİĞİ KARŞISINDA BU İDDİANIN İMKANSIZ VEYA STANDART BİR ZORUNLULUK OLDUĞUNU BELİRTEN TAM BİR CÜMLE BAŞLIK]:
-(Ürünün doğası, kimyasal/teknik içeriği veya kullanım amacı gereği vaat edilen etkinin neden gerçeğe aykırı olduğu veya kategorideki tüm ürünlerde zaten bulunması/bulunmaması gereken genel bir niteliğin münhasır bir üstünlük gibi sunulduğu).
+2. [İNCELENEN ÜRÜN KATEGORİSİNİN BİLİMSEL / SEKTÖREL GERÇEKLİĞİ KARŞISINDA BU İDDİALARIN İMKANSIZ VEYA STANDART BİR ZORUNLULUK OLDUĞUNU BELİRTEN TAM BİR CÜMLE BAŞLIK]:
+(Ürünün doğası, kimyasal/teknik içeriği veya kullanım amacı gereği vaat edilen etkinin neden gerçeğe aykırı olduğu veya kategorideki tüm ürünlerde zaten bulunması/bulunmaması gereken standart bir özelliğin münhasır bir üstünlük gibi sunulduğu).
 
-3. [TİTCK / TGK KILAVUZLARI VE SEKTÖREL DÜZENLEMELER UYARINCA BU TÜR İDDİALARIN YASAKLANDIĞINI GÖSTEREN TAM BİR CÜMLE BAŞLIK]:
+3. [TİTCK / TGK KILAVUZLARI VE SEKTÖREL DÜZENLEMELER UYARINCA BU TÜR İDDİA VE ROZETLERİN YASAKLANDIĞINI GÖSTEREN TAM BİR CÜMLE BAŞLIK]:
 (İlgili Kılavuz hükümleri uyarınca ürünün sahip olmadığı veya kategorideki tüm ürünlerde zaten mevcut olan genel özelliklerin yalnızca kendisine aitmiş gibi sunulamayacağı ve izin verilmeyen sağlık/üstünlük beyanlarının kullanılamayacağı ilkesi).
 
 4. [6502 SAYILI KANUN VE TİCARİ REKLAM YÖNETMELİĞİ UYARINCA SÖZ KONUSU TANITIMLARIN HAKSIZ REKABET VE ALDATICI REKLAM TEŞKİL ETTİĞİNİ İZAH EDEN TAM BİR CÜMLE BAŞLIK]:
