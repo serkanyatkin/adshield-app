@@ -9,6 +9,7 @@ import re
 import requests
 import io
 from urllib.parse import urljoin
+from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -164,24 +165,53 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-def generate_content_safe(contents, system_instruction=None):
+# Hızlı Görsel Optimizasyonu (OCR Kalitesini Korumak Şartıyla Piksel/Boyut Sıkıştırma)
+def optimize_image(img, max_dimension=1024):
+    img = img.convert("RGB")
+    if max(img.size) > max_dimension:
+        img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
+    return img
+
+# Güvenli ve Dinamik Model Yönetimi
+def get_prioritized_models():
     if not api_key:
-        raise Exception("API anahtarı bulunamadı.")
-    
+        return ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
     genai.configure(api_key=api_key)
-    
-    aktif_modeller = []
+    aktif = []
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                aktif_modeller.append(m.name)
+                aktif.append(m.name)
     except Exception:
-        aktif_modeller = ["models/gemini-1.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-pro"]
+        aktif = ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
+    return [m for m in aktif if "flash" in m] + [m for m in aktif if "flash" not in m]
 
-    oncelikli = [m for m in aktif_modeller if "flash" in m] + [m for m in aktif_modeller if "flash" not in m]
-    
+def generate_stream_safe(contents, system_instruction=None):
+    if not api_key:
+        raise Exception("API anahtarı tanımlanmadı.")
+    genai.configure(api_key=api_key)
+    models = get_prioritized_models()
     last_err = None
-    for model_name in oncelikli:
+    for model_name in models:
+        try:
+            model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+            response = model.generate_content(contents, stream=True)
+            for chunk in response:
+                if chunk.text:
+                    yield chunk.text
+            return
+        except Exception as e:
+            last_err = e
+            continue
+    raise Exception(f"Model akışı sağlanamadı. Detay: {last_err}")
+
+def generate_content_safe(contents, system_instruction=None):
+    if not api_key:
+        raise Exception("API anahtarı bulunamadı.")
+    genai.configure(api_key=api_key)
+    models = get_prioritized_models()
+    last_err = None
+    for model_name in models:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents)
@@ -190,8 +220,18 @@ def generate_content_safe(contents, system_instruction=None):
         except Exception as e:
             last_err = e
             continue
-            
     raise Exception(f"Aktif modellerle bağlantı kurulamadı. Hata: {last_err}")
+
+# Paralel Web Görseli ve Metin Kazıyıcı
+def download_single_img(url, headers):
+    try:
+        res = requests.get(url, headers=headers, timeout=4)
+        if res.status_code == 200 and len(res.content) > 3000:
+            pil_img = Image.open(io.BytesIO(res.content))
+            return optimize_image(pil_img)
+    except Exception:
+        pass
+    return None
 
 def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
@@ -207,7 +247,7 @@ def fetch_url_data(url):
     }
     
     try:
-        res = requests.get(url.strip(), headers=headers, timeout=10)
+        res = requests.get(url.strip(), headers=headers, timeout=6)
         if res.status_code == 200:
             try:
                 from bs4 import BeautifulSoup
@@ -228,14 +268,12 @@ def fetch_url_data(url):
                     if len(img_urls) >= 4:
                         break
 
-                for i_url in img_urls[:3]:
-                    try:
-                        img_res = requests.get(i_url, headers=headers, timeout=6)
-                        if img_res.status_code == 200 and len(img_res.content) > 4000:
-                            pil_img = Image.open(io.BytesIO(img_res.content)).convert("RGB")
-                            downloaded_images.append(pil_img)
-                    except Exception:
-                        continue
+                # Paralel İndirme
+                with ThreadPoolExecutor(max_workers=4) as executor:
+                    results = executor.map(lambda u: download_single_img(u, headers), img_urls[:3])
+                    for r in results:
+                        if r is not None:
+                            downloaded_images.append(r)
 
                 for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
                     s.decompose()
@@ -270,6 +308,7 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
+# 8 Adetlik Kapsamlı İçtihat Taraması Aynen Korundu
 def get_relevant_emsaller(metin, sektor, top_k=8):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi."
@@ -384,7 +423,7 @@ mod_secimi = st.radio(
 
 is_danisan = "İç Denetim" in mod_secimi
 
-# İki Kolonlu Panel
+# İki Kolonlu Panel Düzeni
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 with sol_kolon:
@@ -431,7 +470,7 @@ with sol_kolon:
         if yuklenen_gorseller:
             gorsel_cols = st.columns(min(len(yuklenen_gorseller), 4))
             for idx, g_dosya in enumerate(yuklenen_gorseller):
-                g_img = Image.open(g_dosya).convert("RGB")
+                g_img = Image.open(g_dosya)
                 gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
 
         buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
@@ -452,16 +491,13 @@ with sag_kolon:
                 web_gorselleri = []
                 
                 if reklam_url:
-                    with st.spinner("Link içeriği kontrol ediliyor..."):
+                    with st.spinner("Link içeriği ve görseller taranıyor..."):
                         url_metni, web_gorselleri = fetch_url_data(reklam_url)
                 
-                with st.spinner("Materyaller mikro düzeyde taranıyor ve emsal içtihatlar inceleniyor..."):
-                    try:
-                        birlestirilmis_metin = f"{reklam_metni}\n\n[İncelenen Link/Kaynak]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
-                        ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
-                        
-                        # DERİNLEMESİNE (FLASH UZATILMIŞ) ANALİZ PROTOKOLÜ
-                        sistem_metodolojisi = f"""
+                birlestirilmis_metin = f"{reklam_metni}\n\n[İncelenen Link/Kaynak]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
+                ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
+                
+                sistem_metodolojisi = f"""
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, 6502 SAYILI TÜKETİCİNİN KORUNMASI HAKKINDA KANUN (MD. 61 & 77), TİCARİ REKLAM VE HAKSIZ TİCARİ UYGULAMALAR YÖNETMELİĞİ, TİTCK KOZMETİK İDDİALARI KILAVUZU (SÜRÜM 2.0), TGK GIDA VE TAKVİYE EDİCİ GIDA MEVZUATI İLE TÜRK TİCARET KANUNU (MD. 54-55 HAKSIZ REKABET) ALANINDA UZMANLAŞMIŞ KIDEMLİ BİR REKLAM HUKUKU VE REGÜLASYON BAŞDENETÇİSİSİN.
 
 ANALİZ PROTOKOLÜ VE BÜTÜNCÜL TARAMA METODOLOJİSİ:
@@ -493,8 +529,8 @@ Ayrıştırılan her bir unsuru aşağıdaki 6 evrensel mevzuat filtresine tabi 
 - Metin/İddialar: {birlestirilmis_metin}
 """
 
-                        if is_danisan:
-                            prompt = sistem_metodolojisi + f"""
+                if is_danisan:
+                    prompt = sistem_metodolojisi + f"""
 GÖREVİN:
 İç denetim ve risk yönetimi amacıyla, kampanyanın tüm iddialarını (büyük manşetlerden en küçük ambalaj rozetlerine kadar) derinlemesine denetleyen, mevzuat gerekçelerini somutlaştıran ve CEZAİ RİSKİ SIFIRLAYAN GÜVENLİ REVİZYON METİNLERİ sunan kapsamlı bir 'Mevzuat Uyum ve Revizyon Raporu' hazırlamaktır.
 
@@ -536,8 +572,8 @@ RAPOR FORMATI:
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
-                        else:
-                            prompt = sistem_metodolojisi + f"""
+                else:
+                    prompt = sistem_metodolojisi + f"""
 GÖREVİN:
 Pazardaki rakip tanıtımın veya satış noktası materyalinin içerdiği TÜM hukuka aykırılıkları (büyük slogandan en küçük 'içermez' rozetine veya ambalaj vaadine kadar) tek tek deşifre eden, haksız rekabet ve tüketici aldatmacasını kanıtlayan derinlemesine bir 'Piyasa İhlal Raporu' hazırlamaktır.
 
@@ -578,21 +614,31 @@ RAPOR FORMATI:
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
-                        
-                        icerik_listesi = [f"Metin/Parametreler: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
-                        if yuklenen_gorseller:
-                            for g in yuklenen_gorseller:
-                                icerik_listesi.append(Image.open(g).convert("RGB"))
-                        if web_gorselleri:
-                            for wg in web_gorselleri:
-                                icerik_listesi.append(wg)
-                        
-                        st.session_state.rapor_sonucu = generate_content_safe(icerik_listesi, system_instruction=prompt)
-                        st.session_state.dilekce_sonucu = None
-                        st.session_state.chat_history = []
-                    except Exception as err:
-                        st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
+                icerik_listesi = [f"Metin/Parametreler: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
+                if yuklenen_gorseller:
+                    for g in yuklenen_gorseller:
+                        icerik_listesi.append(optimize_image(Image.open(g)))
+                if web_gorselleri:
+                    for wg in web_gorselleri:
+                        icerik_listesi.append(wg)
+
+                # Canlı Akış (Streaming) İle Çıktı Üretimi
+                rapor_alani = st.empty()
+                try:
+                    tam_rapor = ""
+                    with st.spinner("Analiz hazırlanıyor ve canlı aktarılıyor..."):
+                        for parca in generate_stream_safe(icerik_listesi, system_instruction=prompt):
+                            tam_rapor += parca
+                            rapor_alani.markdown(tam_rapor + "▌")
+                    rapor_alani.markdown(tam_rapor)
+                    st.session_state.rapor_sonucu = tam_rapor
+                    st.session_state.dilekce_sonucu = None
+                    st.session_state.chat_history = []
+                except Exception as err:
+                    st.error(f"Analiz sırasında bir hata oluştu: {err}")
+
+        # Sonuçların ve Sekmelerin Gösterimi
         if st.session_state.rapor_sonucu:
             if is_danisan:
                 st.markdown(st.session_state.rapor_sonucu)
