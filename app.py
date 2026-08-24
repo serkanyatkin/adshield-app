@@ -2,7 +2,6 @@ import streamlit as st
 import google.generativeai as genai
 from PIL import Image
 from fpdf import FPDF
-import os
 from datetime import datetime
 
 st.set_page_config(page_title="AdShield - Reklam Risk Denetimi", layout="wide")
@@ -10,7 +9,7 @@ st.set_page_config(page_title="AdShield - Reklam Risk Denetimi", layout="wide")
 st.title("🛡️ AdShield: Reklam Kurulu Risk ve Uyumluluk Analizi")
 st.caption("Yapay zeka destekli ön denetim ve risk skorlama aracı")
 
-# API Anahtarı: Önce Streamlit Secrets'tan kontrol eder, yoksa sol menüden ister
+# API Anahtarı
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 
 if not api_key:
@@ -39,33 +38,37 @@ DENETİM ALANLARI:
 - **Yasal Şerh:** "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Kanun kapsamında hukuki mütalaa teşkil etmez."
 """
 
+def clean_for_pdf(text):
+    if not text:
+        return ""
+    replacements = {
+        "ı": "i", "İ": "I", "ğ": "g", "Ğ": "G",
+        "ü": "u", "Ü": "U", "ş": "s", "Ş": "S",
+        "ö": "o", "Ö": "O", "ç": "c", "Ç": "C",
+        "’": "'", "‘": "'", "“": '"', "”": '"',
+        "—": "-", "–": "-", "•": "-", "…": "..."
+    }
+    for tr_char, en_char in replacements.items():
+        text = text.replace(tr_char, en_char)
+    return text.encode('latin-1', 'replace').decode('latin-1')
+
 def create_pdf(report_text, sektor_adi):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    font_regular = "C:/Windows/Fonts/arial.ttf"
-    if os.path.exists(font_regular):
-        pdf.add_font("ArialTR", "", font_regular)
-        font_name = "ArialTR"
-    else:
-        font_name = "Helvetica"
-
-    pdf.set_font(font_name, "B" if font_name == "Helvetica" else "", 14)
-    pdf.cell(0, 10, "AdShield - Reklam Uyumluluk ve Risk Raporu", ln=True, align="C")
+    pdf.set_font("Helvetica", "B", 14)
+    pdf.cell(0, 10, clean_for_pdf("AdShield - Reklam Uyumluluk ve Risk Raporu"), ln=True, align="C")
     
-    pdf.set_font(font_name, "", 10)
-    pdf.cell(0, 6, f"Sektor: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
+    pdf.set_font("Helvetica", "", 10)
+    pdf.cell(0, 6, clean_for_pdf(f"Sektor: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align="C")
     pdf.line(10, 28, 200, 28)
     pdf.ln(8)
     
     temiz_metin = report_text.replace("### ", "").replace("**", "")
-    if font_name == "Helvetica":
-        tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
-        temiz_metin = temiz_metin.translate(tr_map)
-        
-    pdf.set_font(font_name, "", 10)
-    pdf.multi_cell(0, 6, temiz_metin)
+    pdf.set_font("Helvetica", "", 10)
+    pdf.multi_cell(0, 6, clean_for_pdf(temiz_metin))
+    
     return bytes(pdf.output())
 
 if "rapor_sonucu" not in st.session_state:
