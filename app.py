@@ -3,6 +3,8 @@ import google.generativeai as genai
 from PIL import Image
 from fpdf import FPDF
 from datetime import datetime
+import os
+import urllib.request
 
 st.set_page_config(page_title="AdShield - Reklam Risk Denetimi", layout="wide")
 
@@ -38,36 +40,35 @@ DENETİM ALANLARI:
 - **Yasal Şerh:** "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Kanun kapsamında hukuki mütalaa teşkil etmez."
 """
 
-def clean_for_pdf(text):
-    if not text:
-        return ""
-    replacements = {
-        "ı": "i", "İ": "I", "ğ": "g", "Ğ": "G",
-        "ü": "u", "Ü": "U", "ş": "s", "Ş": "S",
-        "ö": "o", "Ö": "O", "ç": "c", "Ç": "C",
-        "’": "'", "‘": "'", "“": '"', "”": '"',
-        "—": "-", "–": "-", "•": "-", "…": "..."
-    }
-    for tr_char, en_char in replacements.items():
-        text = text.replace(tr_char, en_char)
-    return text.encode('latin-1', 'replace').decode('latin-1')
+# Türkçe Font İndirme ve PDF Fonksiyonu
+def get_pdf_font():
+    font_path = "DejaVuSans.ttf"
+    if not os.path.exists(font_path):
+        url = "https://raw.githubusercontent.com/fpdf2/fpdf2/master/test/fonts/DejaVuSans.ttf"
+        urllib.request.urlretrieve(url, font_path)
+    return font_path
 
 def create_pdf(report_text, sektor_adi):
+    font_file = get_pdf_font()
+    
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, clean_for_pdf("AdShield - Reklam Uyumluluk ve Risk Raporu"), ln=True, align="C")
+    # Türkçe Unicode Font Tanımlama
+    pdf.add_font("DejaVu", "", font_file)
     
-    pdf.set_font("Helvetica", "", 10)
-    pdf.cell(0, 6, clean_for_pdf(f"Sektor: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}"), ln=True, align="C")
+    pdf.set_font("DejaVu", "", 15)
+    pdf.cell(0, 10, "AdShield - Reklam Uyumluluk ve Risk Raporu", ln=True, align="C")
+    
+    pdf.set_font("DejaVu", "", 9)
+    pdf.cell(0, 6, f"Sektör: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
     pdf.line(10, 28, 200, 28)
     pdf.ln(8)
     
     temiz_metin = report_text.replace("### ", "").replace("**", "")
-    pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, clean_for_pdf(temiz_metin))
+    pdf.set_font("DejaVu", "", 9.5)
+    pdf.multi_cell(0, 5.5, temiz_metin)
     
     return bytes(pdf.output())
 
