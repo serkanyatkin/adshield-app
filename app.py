@@ -11,12 +11,12 @@ import io
 from urllib.parse import urljoin
 
 st.set_page_config(
-    page_title="Sezer Kara Hukuk Bürosu | Reklam Hukuku Denetim Sistemi",
+    page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal CSS Tasarımı
+# Kurumsal B2B SaaS CSS Tasarımı
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
@@ -89,14 +89,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Üst Başlık
+# Üst Başlık Banner
 st.markdown("""
 <div class="firm-header" lang="tr">
     <div>
-        <div class="firm-title">SEZER KARA HUKUK BÜROSU</div>
-        <div class="firm-subtitle">Reklam Kurulu İçtihat & Risk Denetim Sistemi</div>
+        <div class="firm-title">ADSHIELD COMPLIANCE</div>
+        <div class="firm-subtitle">Reklam Kurulu İçtihat & Kurumsal Risk Denetim Sistemi</div>
     </div>
-    <div class="firm-badge">Reklam ve Rekabet Hukuku Departmanı</div>
+    <div class="firm-badge">Kurumsal Regülasyon & Denetim Motoru</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -106,23 +106,21 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Dinamik Model Tespiti ve Güvenli Çalıştırma Motoru
+# Dinamik Model Tespiti ve Güvenli Çalıştırma
 def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     
     genai.configure(api_key=api_key)
     
-    # 1. API anahtarında aktif olan tüm generateContent modellerini çek
     aktif_modeller = []
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
                 aktif_modeller.append(m.name)
     except Exception:
-        aktif_modeller = ["models/gemini-1.5-flash", "models/gemini-1.5-pro", "models/gemini-2.0-flash"]
+        aktif_modeller = ["models/gemini-1.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-pro"]
 
-    # Flash modelleri önceliklendir (hızlı ve hafif oldukları için)
     oncelikli = [m for m in aktif_modeller if "flash" in m] + [m for m in aktif_modeller if "flash" not in m]
     
     last_err = None
@@ -312,26 +310,26 @@ if "rapor_sonucu" not in st.session_state:
 if "dilekce_sonucu" not in st.session_state:
     st.session_state.dilekce_sonucu = None
 if "aktif_mod" not in st.session_state:
-    st.session_state.aktif_mod = "danisan"
+    st.session_state.aktif_mod = "ic_denetim"
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Mod Seçimi
+# Mod Seçimi (Kurumsal Terminoloji)
 mod_secimi = st.radio(
     "İnceleme Kapsamı",
-    ["Kendi Reklam Taslağımızın Uyumluluk Denetimi (Danışan Modu)", 
-     "Rakip Ürün ve Reklam İncelemesi (Şikayet ve İhbar Modu)"],
+    ["Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim Modu)", 
+     "Piyasa ve Rakip Reklam İncelemesi (Şikayet ve İhbar Modu)"],
     horizontal=True
 )
 
-is_danisan = "Danışan" in mod_secimi
-st.session_state.aktif_mod = "danisan" if is_danisan else "rakip"
+is_danisan = "İç Denetim" in mod_secimi
+st.session_state.aktif_mod = "ic_denetim" if is_danisan else "rakip"
 
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 with sol_kolon:
     with st.container(border=True):
-        panel_sol_baslik = "İncelenecek Reklam Parametreleri" if is_danisan else "İncelenecek Rakip Materyali"
+        panel_sol_baslik = "İncelenecek Kampanya Parametreleri" if is_danisan else "İncelenecek Piyasa / Rakip Materyali"
         st.markdown(f'<div class="section-heading" lang="tr">{panel_sol_baslik}</div>', unsafe_allow_html=True)
 
         sektor = st.selectbox("Faaliyet Sektörü", [
@@ -380,7 +378,7 @@ with sol_kolon:
 
 with sag_kolon:
     with st.container(border=True):
-        panel_baslik = "Hukuki Uyum ve Güvenli Revizyon Raporu" if is_danisan else "Rakip İhlal Tespiti ve Şikayet Merkezi"
+        panel_baslik = "Mevzuat Uyum ve Güvenli Revizyon Raporu" if is_danisan else "Piyasa İhlal Tespiti ve Başvuru Merkezi"
         st.markdown(f'<div class="section-heading" lang="tr">{panel_baslik}</div>', unsafe_allow_html=True)
         
         if analiz_butonu:
@@ -403,15 +401,15 @@ with sag_kolon:
                         
                         if is_danisan:
                             prompt = f"""
-Sen Sezer Kara Hukuk Bürosu bünyesinde çalışan kıdemli bir Reklam Hukuku ve Mevzuat Uyum Danışmanısın.
-Müvekkilimiz, kendi reklam taslağının (metinler, yüklenen görseller veya web sayfasındaki afiş/ürün ambalajları) Reklam Kurulu denetimlerinden ceza almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
+Sen reklam hukuku, tüketici mevzuatı ve haksız ticari uygulamalar denetimi konusunda uzmanlaşmış kıdemli bir Kurumsal Reklam Uyum Denetçisisin.
+Şirket yönetimimiz, planlanan reklam taslağının (metinler, yüklenen görseller veya web sayfasındaki afiş/ürün ambalajları) Reklam Kurulu denetimlerinden idari yaptırım almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
 
 Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ EMSAL METİNLERİ ===
 {ilgili_emsaller}
 =============================
 
-İNCELENEN REKLAM TASLAĞI:
+İNCELENEN KAMPANYA TASLAĞI:
 Sektör: {sektor}
 Mecra: {mecra}
 İçerik: {birlestirilmis_metin}
@@ -452,12 +450,12 @@ RAPOR FORMATI:
 * **Gereken İspat / Dipnot Standartları:** (Hazır bulundurulması gereken test raporu veya görsel altı yasal dipnot)
 
 ### V. YASAL ŞERH
-"Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki danışmanlık yerine geçmez."
+"Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
                         else:
                             prompt = f"""
-Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan kıdemli bir Reklam ve Haksız Rekabet Avukatısın.
-Müvekkilimiz, pazardaki bir rakip ürünün / reklamın (metin, web sayfası veya görseller üzerindeki ambalaj/banner iddialarının) mevzuata aykırı olduğunu, tüketiciyi aldattığını ve haksız rekabet yarattığını düşünerek inceleme talep etmektedir.
+Sen haksız rekabet, piyasa denetimi ve tüketici mevzuatı alanında uzmanlaşmış kıdemli bir Kurumsal Uyum ve Rekabet Denetçisisin.
+Pazardaki bir rakip ürünün / tanıtımın (metin, web sayfası veya görseller üzerindeki ambalaj/banner iddialarının) mevzuata aykırı olduğunu, tüketiciyi aldattığını ve haksız rekabet yarattığını tespit etmek amacıyla detaylı bir ihlal raporu hazırlamaktasın.
 
 Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ EMSAL METİNLERİ ===
@@ -500,7 +498,7 @@ RAPOR FORMATI:
 * **Gereken Delil Tespiti:** (Noter tespiti, URL kaydı, arşiv kaydı vb.)
 
 ### V. YASAL ŞERH
-"Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki danışmanlık yerine geçmez."
+"Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
 """
                         
                         icerik_listesi = [f"Metin: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
@@ -521,11 +519,11 @@ RAPOR FORMATI:
             if is_danisan:
                 st.markdown(st.session_state.rapor_sonucu)
                 try:
-                    pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "Sezer Kara Hukuk Burosu - Reklam Uyum Raporu")
+                    pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Reklam Uyum ve Risk Raporu")
                     st.download_button(
                         label="Hukuki Uyum ve Revizyon Raporunu İndir (PDF)",
                         data=pdf_verisi,
-                        file_name=f"SezerKara_Uyum_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                        file_name=f"AdShield_Uyum_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf",
                         type="secondary"
                     )
@@ -537,11 +535,11 @@ RAPOR FORMATI:
                 with tab_ihlal:
                     st.markdown(st.session_state.rapor_sonucu)
                     try:
-                        pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "Sezer Kara Hukuk Burosu - Rakip Reklam İhlal Raporu")
+                        pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Rakip Reklam İhlal Raporu")
                         st.download_button(
                             label="Rakip İhlal Raporunu İndir (PDF)",
                             data=pdf_verisi,
-                            file_name=f"SezerKara_Rakip_Ihlal_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                            file_name=f"AdShield_Rakip_Ihlal_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                             mime="application/pdf",
                             type="secondary"
                         )
@@ -549,20 +547,20 @@ RAPOR FORMATI:
                         st.warning(f"PDF uyarısı: {e}")
 
                 with tab_dilekce:
-                    st.caption("İncelenen rakip tanıtım hakkında Reklam Kurulu Başkanlığı'na sunulmak üzere doğrudan dava/başvuru pratiğinde kullanılan formatta dilekçe oluşturur.")
+                    st.caption("İncelenen rakip tanıtım hakkında Reklam Kurulu Başkanlığı'na sunulmak üzere doğrudan resmi başvuru formatında dilekçe oluşturur.")
                     
                     if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
                         with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
                             try:
                                 dilekce_prompt = f"""
-Sen Sezer Kara Hukuk Bürosu'nda görev yapan kıdemli bir Reklam ve Haksız Rekabet Hukuku Avukatısın.
+Sen tüketici hukuku ve reklam regülasyonları konusunda deneyimli bir Hukuk Müşavirisin.
 Aşağıda incelenen rakip iletişim vakıası ve tespit edilen mevzuat aykırılıkları yer almaktadır:
 
 İNCELEME RAPORU VE VAKIA VERİSİ:
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Yapay zeka robotik şablonlarından tamamen uzak; Türk idari ve tüketici yargısı pratiğinde tecrübeli bir avukatın kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+Yapay zeka robotik şablonlarından tamamen uzak; doğrudan Türk idari yargı ve Reklam Kurulu pratiğine uygun, **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
 
 DİLEKÇEYİ AYNEN AŞAĞIDAKİ YAPI VE DİLDE OLUŞTUR:
 
@@ -570,9 +568,9 @@ T.C. TİCARET BAKANLIĞI
 REKLAM KURULU BAŞKANLIĞINA
 ANKARA
 
-ŞİKAYET EDEN : [Müvekkil Şirket Unvanı]
-ADRES : [Müvekkil Şirket Adresi]
-VEKİLİ : Av. [Vekil Adı Soyadı] - Sezer Kara Hukuk Bürosu
+ŞİKAYET EDEN : [Şikayet Eden Şirket / Marka Unvanı]
+ADRES : [Şirket Adresi]
+YETKİLİ / VEKİL : [Şirket Temsilcisi / Hukuk Müşaviri / Vekil]
 ŞİKAYET EDİLEN : [Şikayet Edilen Firma / Satıcı / Hesap Bilgisi]
 ADRES : [Şikayet Edilen Adres / İnternet Sitesi / Mecra]
 ŞİKAYET KONUSU : Şikayet edilen tarafça yürütülen tanıtımlarda yer alan tüketiciyi yanıltıcı, haksız rekabete yol açıcı ve mevzuata aykırı nitelikteki iddialar nedeniyle idari yaptırım uygulanması ve anılan reklamların durdurulması talebidir.
@@ -591,11 +589,10 @@ AÇIKLAMALAR:
 4. [6502 SAYILI KANUN VE TİCARİ REKLAM YÖNETMELİĞİ UYARINCA SÖZ KONUSU TANITIMLARIN HAKSIZ REKABET VE ALDATICI REKLAM TEŞKİL ETTİĞİNİ İZAH EDEN TAM BİR CÜMLE BAŞLIK]:
 (6502 sayılı Kanun md. 61 ile Ticari Reklam Yönetmeliği md. 7, 9, 10, 11 uyarınca tüketicinin bilgi eksikliğinin istismar edildiği, dürüst rakiplerin haksız yere şaibe altında bırakıldığı ve pazardaki dürüst rekabet ortamının bozulduğu).
 
-SONUÇ VE İSTEM : Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayınının tedbiren ve nihai olarak DURDURULMASINA, yayından kaldırılmasına ve sorumlu şirket/şahıs hakkında en üst hadden İDARİ PARA CEZASI ile cezalandırılmasına karar verilmesini vekaleten saygılarımızla arz ve talep ederiz.
+SONUÇ VE İSTEM : Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayınının tedbiren ve nihai olarak DURDURULMASINA, yayından kaldırılmasına ve sorumlu şirket/şahıs hakkında en üst hadden İDARİ PARA CEZASI ile cezalandırılmasına karar verilmesini saygılarımızla arz ve talep ederiz.
 
-[Müvekkil Şirket Unvanı]
-Vekili Av. [İsim Soyisim]
-Sezer Kara Hukuk Bürosu
+[Şikayet Eden Şirket Unvanı]
+Yetkilisi / Vekili
 """
                                 st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
                             except Exception as e:
@@ -621,7 +618,7 @@ Sezer Kara Hukuk Bürosu
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
-        st.markdown('<div class="section-heading" lang="tr">Hukuki Danışman ve Soru-Cevap</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading" lang="tr">Mevzuat Danışmanı ve Soru-Cevap</div>', unsafe_allow_html=True)
         st.caption("Üretilen rapora, emsal dosyalara veya stratejik adımlara ilişkin sorularınızı iletebilirsiniz.")
 
         for msg in st.session_state.chat_history:
@@ -638,8 +635,8 @@ if st.session_state.rapor_sonucu:
                 with st.spinner("Değerlendiriliyor..."):
                     try:
                         chat_instruction = f"""
-Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan bir Reklam Hukuku Danışmanısın.
-Kullanıcı seçilen mod ({'Danışan Uyum Modu' if is_danisan else 'Rakip Şikayet Modu'}) kapsamında sorular soruyor.
+Sen kurumsal reklam mevzuatı ve Reklam Kurulu içtihatları konusunda uzmanlaşmış bir Uyum Danışmanısın.
+Kullanıcı seçilen mod ({'Kampanya Uyum Modu' if is_danisan else 'Rakip Şikayet Modu'}) kapsamında sorular soruyor.
 Rapor: {st.session_state.rapor_sonucu}
 Metin: {reklam_metni}
 Soruyu doğrudan mevzuat ve içtihat ışığında yanıtla.
