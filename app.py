@@ -10,12 +10,11 @@ import requests
 
 st.set_page_config(
     page_title="Sezer Kara Hukuk Bürosu | Reklam Hukuku Denetim Sistemi",
-    page_icon="⚖️",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal CSS
+# Kurumsal CSS Tasarımı
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
@@ -93,14 +92,14 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Üst Header
+# Üst Başlık
 st.markdown("""
 <div class="firm-header">
     <div>
         <div class="firm-title">Sezer Kara Hukuk Bürosu</div>
         <div class="firm-subtitle">Reklam Kurulu İçtihat & Risk Denetim Sistemi</div>
     </div>
-    <div class="firm-badge">Reklam & Rekabet Hukuku Departmanı</div>
+    <div class="firm-badge">Reklam ve Rekabet Hukuku Departmanı</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -253,14 +252,12 @@ if "aktif_mod" not in st.session_state:
     st.session_state.aktif_mod = "danisan"
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "taslak_metin" not in st.session_state:
-    st.session_state.taslak_metin = ""
 
-# ÜST SEVİYE MOD SEÇİCİ
+# Mod Seçimi
 mod_secimi = st.radio(
-    "İŞLEM AMACINI SEÇİNİZ:",
-    ["🛡️ Kendi Reklam Taslağımızın Uyumluluk Denetimi (Danışan Modu)", 
-     "⚖️ Rakip Ürün & Reklam İncelemesi (Şikayet & İhbar Modu)"],
+    "İnceleme Kapsamı",
+    ["Kendi Reklam Taslağımızın Uyumluluk Denetimi (Danışan Modu)", 
+     "Rakip Ürün ve Reklam İncelemesi (Şikayet ve İhbar Modu)"],
     horizontal=True
 )
 
@@ -271,24 +268,8 @@ sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 with sol_kolon:
     with st.container(border=True):
-        if is_danisan:
-            st.markdown('<div class="section-heading">Kendi Reklam Taslağımız / İddialarımız</div>', unsafe_allow_html=True)
-            st.caption("⚡ Hızlı Test İçin Örnek Yükle:")
-            sc1, sc2, sc3 = st.columns(3)
-            if sc1.button("Kozmetik Taslak"):
-                st.session_state.taslak_metin = "Dermatologların 1 numaralı tercihi! Tamamen %100 bitkisel serumumuz leke ve kırışıklıkları 48 saatte tamamen yok eder. Sağlık Bakanlığı onaylı formülüyle botoks etkisini evinize getirir."
-            if sc2.button("Gıda Takviyesi"):
-                st.session_state.taslak_metin = "Eklem kireçlenmesine kesin son! Bağışıklığı güçlendirerek dizdeki iltihabı kurutur, ameliyatsız tedavi sağlar."
-            if sc3.button("Kampanya / İndirim"):
-                st.session_state.taslak_metin = "Yılın efsane indirimi! Türkiye'nin en ucuz robot süpürgesi sadece bugün 24.999 TL yerine 4.999 TL! Son 3 ürün, tükeniyor."
-        else:
-            st.markdown('<div class="section-heading">İncelenecek Rakip Ürün & Reklam Materyali</div>', unsafe_allow_html=True)
-            st.caption("⚡ Rakip İhlal Örneği Yükle:")
-            rc1, rc2 = st.columns(2)
-            if rc1.button("Rakip Bebek Kremi (SLS İddiası)"):
-                st.session_state.taslak_metin = "Sudocrem markalı bebek bakım kreminin eczane stantlarında 'SLS İçermez' simgesi ve iddiasıyla satıldığı tespit edilmiştir. Durulanmayan bebek kreminde SLS zaten kullanılamayacağı halde bu ifade haksız üstünlük sağlamaktadır."
-            if rc2.button("Rakip Dermokozmetik"):
-                st.session_state.taslak_metin = "Rakip marka Instagram ve web sitesinde 'Doktorların reçete ettiği tek leke giderici serum, 3 günde ameliyatsız gençleşme garantisi' şeklinde tanıtım yapmaktadır."
+        panel_sol_baslik = "İncelenecek Reklam Parametreleri" if is_danisan else "İncelenecek Rakip Materyali"
+        st.markdown(f'<div class="section-heading">{panel_sol_baslik}</div>', unsafe_allow_html=True)
 
         sektor = st.selectbox("Faaliyet Sektörü", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
@@ -311,14 +292,13 @@ with sol_kolon:
         )
 
         reklam_metni = st.text_area(
-            "Reklam Metni / Ticari İddialar / Açıklamalar",
-            value=st.session_state.taslak_metin,
-            height=110,
-            placeholder="İncelenmesini istediğiniz metin veya iddiaları giriniz..."
+            "Reklam Metni / Ticari İddialar",
+            height=140,
+            placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz..."
         )
         
         yuklenen_gorseller = st.file_uploader(
-            "Reklam Görselleri / Taslaklar / Stant Fotoğrafları",
+            "Reklam Görselleri / Taslaklar (Çoklu Yükleme)",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True
         )
@@ -329,12 +309,12 @@ with sol_kolon:
                 g_img = Image.open(g_dosya)
                 gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
 
-        buton_etiketi = "🛡️ Uyum Analizi & Güvenli Revizyonu Başlat" if is_danisan else "⚖️ Rakip İhlal Analizini Başlat"
+        buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
         analiz_butonu = st.button(buton_etiketi, type="primary")
 
 with sag_kolon:
     with st.container(border=True):
-        panel_baslik = "Hukuki Uyum & Güvenli Revizyon Raporu" if is_danisan else "Rakip İhlal Tespiti & Şikayet Merkezi"
+        panel_baslik = "Hukuki Uyum ve Güvenli Revizyon Raporu" if is_danisan else "Rakip İhlal Tespiti ve Şikayet Merkezi"
         st.markdown(f'<div class="section-heading">{panel_baslik}</div>', unsafe_allow_html=True)
         
         if analiz_butonu:
@@ -348,7 +328,7 @@ with sag_kolon:
                     with st.spinner("Web sayfası taranıyor..."):
                         url_metni = fetch_url_content(reklam_url)
                 
-                with st.spinner("Reklam Kurulu içtihatları ve 6502 sayılı Kanun taranıyor..."):
+                with st.spinner("Reklam Kurulu içtihatları ve mevzuat çerçevesinde inceleniyor..."):
                     try:
                         genai.configure(api_key=api_key)
                         birlestirilmis_metin = f"{reklam_metni}\n\n[Web İçeriği]: {url_metni}" if url_metni else reklam_metni
@@ -382,10 +362,10 @@ RAPOR FORMATI:
 ### II. REKLAM KURULU EMSAL KARARLARI VE CEZA EŞLEŞMELERİ
 (Arşivdeki emsal metinlerden tespit edilen somut kararlardan EN AZ 2 ADET karar künyesini şu formatta ver):
 * **Emsal Karar 1:**
-  - **Dosya No & Karar Tarihi:** (Örn: Dosya No: 2023/..., Karar Tarihi: ...)
+  - **Dosya No & Karar Tarihi:**
   - **Firma / Mecra:** 
-  - **Kararda Ceza Alan Orijinal İfade:** (Kararda ceza alan şirketin kullandığı tırnak içi tam reklam cümlesi)
-  - **Taslağımızla Benzerliği:** (Taslağımızdaki hangi vaat bu kararla örtüşüyor?)
+  - **Kararda Ceza Alan Orijinal İfade:**
+  - **Taslağımızla Benzerliği:**
   - **Uygulanan Yaptırım:** (Durdurma ve ... TL İdari Para Cezası)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
@@ -468,15 +448,13 @@ RAPOR FORMATI:
                     except Exception as err:
                         st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
-        # SONUÇ GÖRÜNÜMÜ: Danışan Modunda Sadece Uyum Raporu, Rakip Modunda Sekmeli Dilekçe
         if st.session_state.rapor_sonucu:
             if is_danisan:
-                # DANIŞAN MODU: Şikayet dilekçesi YOK
                 st.markdown(st.session_state.rapor_sonucu)
                 try:
                     pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "Sezer Kara Hukuk Burosu - Reklam Uyum Raporu")
                     st.download_button(
-                        label="📄 Hukuki Uyum ve Revizyon Raporunu İndir (PDF)",
+                        label="Hukuki Uyum ve Revizyon Raporunu İndir (PDF)",
                         data=pdf_verisi,
                         file_name=f"SezerKara_Uyum_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                         mime="application/pdf",
@@ -485,15 +463,14 @@ RAPOR FORMATI:
                 except Exception as e:
                     st.warning(f"PDF uyarısı: {e}")
             else:
-                # RAKİP MODU: İhlal Raporu + Şikayet Dilekçesi Sekmeleri
-                tab_ihlal, tab_dilekce = st.tabs(["📋 Haksız Rekabet & İhlal Raporu", "⚖️ Reklam Kurulu Şikayet Dilekçesi"])
+                tab_ihlal, tab_dilekce = st.tabs(["Haksız Rekabet ve İhlal Raporu", "Reklam Kurulu Şikayet Dilekçesi"])
                 
                 with tab_ihlal:
                     st.markdown(st.session_state.rapor_sonucu)
                     try:
                         pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "Sezer Kara Hukuk Burosu - Rakip Reklam İhlal Raporu")
                         st.download_button(
-                            label="📄 Rakip İhlal Raporunu İndir (PDF)",
+                            label="Rakip İhlal Raporunu İndir (PDF)",
                             data=pdf_verisi,
                             file_name=f"SezerKara_Rakip_Ihlal_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                             mime="application/pdf",
@@ -503,9 +480,9 @@ RAPOR FORMATI:
                         st.warning(f"PDF uyarısı: {e}")
 
                 with tab_dilekce:
-                    st.caption("İncelenen rakip iletişim hakkında Reklam Kurulu'na sunulmak üzere resmi 4 maddeli avukat şikayet dilekçesi oluşturur.")
+                    st.caption("İncelenen rakip iletişim hakkında Reklam Kurulu'na sunulmak üzere 4 maddeli avukat şikayet dilekçesi oluşturur.")
                     
-                    if st.button("📜 Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
+                    if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
                         with st.spinner("Şikayet dilekçesi yazılıyor..."):
                             try:
                                 dilekce_prompt = f"""
@@ -549,7 +526,7 @@ Sezer Kara Hukuk Bürosu
                         try:
                             dilekce_pdf = create_pdf(st.session_state.dilekce_sonucu, "T.C. Ticaret Bakanligi Reklam Kurulu Baskanligi Sikayet Dilekcesi")
                             st.download_button(
-                                label="📥 Şikayet Dilekçesini İndir (PDF)",
+                                label="Şikayet Dilekçesini İndir (PDF)",
                                 data=dilekce_pdf,
                                 file_name=f"Reklam_Kurulu_Sikayet_Dilekcesi_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
                                 mime="application/pdf",
@@ -564,7 +541,7 @@ Sezer Kara Hukuk Bürosu
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
-        st.markdown('<div class="section-heading">Hukuki Danışman & Soru-Cevap</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading">Hukuki Danışman ve Soru-Cevap</div>', unsafe_allow_html=True)
         st.caption("Üretilen rapora, emsal dosyalara veya stratejik adımlara ilişkin sorularınızı iletebilirsiniz.")
 
         for msg in st.session_state.chat_history:
