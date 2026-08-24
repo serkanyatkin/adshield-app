@@ -24,7 +24,6 @@ st.markdown("""
         font-family: 'Plus Jakarta Sans', sans-serif;
     }
     
-    /* Kurumsal Navbar */
     .firm-header {
         background-color: #5D728B;
         padding: 22px 32px;
@@ -62,7 +61,6 @@ st.markdown("""
         text-transform: uppercase;
     }
 
-    /* Başlık Tipografisi */
     .section-heading {
         font-family: 'Cinzel', serif;
         font-size: 15px;
@@ -75,7 +73,6 @@ st.markdown("""
         padding-bottom: 8px;
     }
 
-    /* Form ve Buton Tasarımı */
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
@@ -93,19 +90,10 @@ st.markdown("""
         background-color: #4A5E74 !important;
         box-shadow: 0 4px 12px rgba(74, 94, 116, 0.25) !important;
     }
-    
-    /* Örnek Seçici Butonları */
-    .stButton button[kind="secondary"] {
-        font-size: 12px !important;
-        border-radius: 2px !important;
-        border: 1px solid #CBD5E1 !important;
-        color: #475569 !important;
-        background: #F8FAFC !important;
-    }
 </style>
 """, unsafe_allow_html=True)
 
-# Üst Kurumsal Header
+# Üst Header
 st.markdown("""
 <div class="firm-header">
     <div>
@@ -116,7 +104,6 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# API Anahtarı
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 if not api_key:
     with st.sidebar:
@@ -124,6 +111,31 @@ if not api_key:
         api_key = st.text_input("Gemini API Key:", type="password")
 
 secilen_model = "gemini-3.6-flash"
+
+# Web Sitesinden / Linkten İçerik Çekme Fonksiyonu
+def fetch_url_content(url):
+    if not url or not url.strip().startswith(("http://", "https://")):
+        return ""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        res = requests.get(url.strip(), headers=headers, timeout=8)
+        if res.status_code == 200:
+            try:
+                from bs4 import BeautifulSoup
+                soup = BeautifulSoup(res.text, 'html.parser')
+                for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
+                    s.decompose()
+                text = soup.get_text(separator=' ')
+            except ImportError:
+                text = re.sub(r'<[^>]+>', ' ', res.text)
+            
+            clean_text = ' '.join(text.split())
+            return clean_text[:4500]
+    except Exception as e:
+        return f"[Web sayfası içeriği çekilemedi: {e}]"
+    return ""
 
 # Karar Metinlerini Belleğe Yükleme
 @st.cache_data
@@ -237,7 +249,7 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
 
     return bytes(pdf.output())
 
-# Session State
+# Session State Tanımlamaları
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "sektor_bilgisi" not in st.session_state:
@@ -251,13 +263,19 @@ if "chat_history" not in st.session_state:
 if "taslak_metin" not in st.session_state:
     st.session_state.taslak_metin = ""
 
-# İki Kolonlu Panel Düzeni
 sol_kolon, sag_kolon = st.columns([1, 1.2], gap="large")
 
 with sol_kolon:
     with st.container(border=True):
-        st.markdown('<div class="section-heading">İncelenecek Reklam Parametreleri</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-heading">İncelenecek Reklam & Veri Girişi</div>', unsafe_allow_html=True)
         
+        inceleme_turu = st.radio(
+            "İnceleme Amacı",
+            ["Kendi Reklam Taslağımızın Uyumluluk Denetimi (Danışan Modu)", 
+             "Rakip Ürün / Reklam İncelemesi (Şikayet & İhbar Ön Değerlendirmesi)"],
+            horizontal=False
+        )
+
         st.caption("Örnek Senaryo Yükle:")
         sc1, sc2, sc3 = st.columns(3)
         if sc1.button("Kozmetik"):
@@ -275,24 +293,38 @@ with sol_kolon:
             "Diğer"
         ])
         
-        mecra = st.selectbox("Yayınlanacak Mecra", [
+        mecra = st.selectbox("Yayınlanacak / Yayınlanan Mecra", [
             "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)",
             "Ulusal Televizyon Kanalı",
             "Yerel Televizyon / Radyo",
             "Açık Hava (Billboard, Broşür vb.)"
         ])
         
+        reklam_url = st.text_input(
+            "İncelenecek Web Sayfası / Ürün / Reklam Linki (Opsiyonel)",
+            placeholder="https://www.ornek-site.com/urun-sayfasi veya reklam linki..."
+        )
+
         reklam_metni = st.text_area(
-            "Reklam Metni / Ticari İddialar",
+            "Reklam Metni / Ticari İddialar / Açıklamalar",
             value=st.session_state.taslak_metin,
-            height=130,
-            placeholder="İncelenmesi talep edilen reklam metnini buraya giriniz..."
+            height=120,
+            placeholder="İncelenmesi talep edilen reklam metnini veya iddiaları buraya giriniz..."
         )
         
-        yuklenen_gorsel = st.file_uploader("Görsel / Taslak Yükle (Opsiyonel)", type=["jpg", "jpeg", "png"])
-        if yuklenen_gorsel:
-            image = Image.open(yuklenen_gorsel)
-            st.image(image, caption="İncelenen Taslak Görsel", use_container_width=True)
+        # Çoklu Görsel Yükleme
+        yuklenen_gorseller = st.file_uploader(
+            "Reklam Görselleri / Taslaklar / Carousel / Story (Çoklu Yükleme)",
+            type=["jpg", "jpeg", "png"],
+            accept_multiple_files=True
+        )
+        
+        if yuklenen_gorseller:
+            st.caption(f"Yüklenen Görseller ({len(yuklenen_gorseller)} Adet):")
+            gorsel_cols = st.columns(min(len(yuklenen_gorseller), 4))
+            for idx, g_dosya in enumerate(yuklenen_gorseller):
+                g_img = Image.open(g_dosya)
+                gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
 
         analiz_butonu = st.button("Hukuki Denetimi ve Emsal Taramasını Başlat", type="primary")
 
@@ -303,39 +335,49 @@ with sag_kolon:
         if analiz_butonu:
             if not api_key:
                 st.error("Lütfen sistem yöneticisinden temin edilen geçerli API anahtarını giriniz.")
-            elif not reklam_metni and not yuklenen_gorsel:
-                st.warning("Lütfen denetim için metin giriniz veya görsel yükleyiniz.")
+            elif not reklam_metni and not yuklenen_gorseller and not reklam_url:
+                st.warning("Lütfen denetim için metin giriniz, link paylaşınız veya görsel yükleyiniz.")
             else:
+                url_metni = ""
+                if reklam_url:
+                    with st.spinner("Girilen web adresi taranıyor ve ürün içerikleri çekiliyor..."):
+                        url_metni = fetch_url_content(reklam_url)
+                
                 with st.spinner("Reklam Kurulu içtihatları ve 6502 sayılı Kanun çerçevesinde taranıyor..."):
                     try:
                         genai.configure(api_key=api_key)
-                        ilgili_emsaller = get_relevant_emsaller(reklam_metni, sektor)
+                        birlestirilmis_metin = f"{reklam_metni}\n\n[Web Linki İçeriği]: {url_metni}" if url_metni else reklam_metni
+                        ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
                         
                         prompt = f"""
-Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK ve TGK Kılavuzları konusunda uzmanlaşmış bir Reklam Hukuku Denetçisisin.
+Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK ve TGK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisisin.
 
 Aşağıda karar külliyatından incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ REKLAM KURULU EMSAL METİNLERİ ===
 {ilgili_emsaller}
 ==========================================
 
-İNCELENECEK REKLAM VAKIASI:
-Sektör: {sektor}
-Yayın Mecrası: {mecra}
-İçerik: {reklam_metni}
+İNCELEME BİLGİLERİ:
+- İnceleme Amacı / Modu: {inceleme_turu}
+- Sektör: {sektor}
+- Yayın Mecrası: {mecra}
+- Reklam Metni / İddialar: {reklam_metni}
+- İncelenen Web Sayfası İçeriği (Varsa): {url_metni[:2000] if url_metni else "Belirtilmedi"}
 
 GÖREVİN:
-Yapay zeka şablonlarından uzak, doğrudan mevzuat ve içtihada dayanan, net ve gerekçeli bir Hukuki Denetim Raporu hazırlamaktır.
+Yapay zeka şablonlarından uzak, doğrudan mevzuat ve somut içtihatlara dayanan, net ve gerekçeli bir Hukuki Denetim Raporu hazırlamaktır.
+Eğer mod 'Rakip Ürün İncelemesi' ise; 4. bölümde Reklam Kurulu nezdinde şikayet/ihbar dilekçesinde kullanılabilecek somut hukuki gerekçeleri vurgula.
+Eğer mod 'Danışan Modu' ise; 4. bölümde cezai riski sıfırlayan ticari revizyon önerilerini ve ispat belgelerini sun.
 
 RAPOR FORMATI:
 
 ### [RİSK DERECESİ: YÜKSEK (KIRMIZI) / ORTA (SARI) / DÜŞÜK (YEŞİL)] - Risk Skoru: [0-100]
 
 ### I. HUKUKİ RİSK DEĞERLENDİRMESİ VE MEVZUAT AYKIRILIKLARI
-(İncelenen reklamdaki iddiaları tek tek ele al. İhlal edilen mevzuat maddeleri, tüketici nezdindeki intiba ve ispat külfeti açısından açıkla):
-* **[İncelenen İfade 1]:** (Hukuki değerlendirme, ihlal edilen mevzuat ve Kurul yaklaşımı)
-* **[İncelenen İfade 2]:**
-* **[İncelenen İfade 3]:**
+(İncelenen reklamdaki/web sitesindeki iddiaları tek tek ele al. İhlal edilen mevzuat maddeleri, tüketici nezdindeki intiba ve ispat külfeti açısından açıkla):
+* **[İncelenen İfade/İddia 1]:** (Hukuki değerlendirme, ihlal edilen mevzuat ve Kurul yaklaşımı)
+* **[İncelenen İfade/İddia 2]:**
+* **[İncelenen İfade/İddia 3]:**
 
 ### II. REKLAM KURULU EMSAL KARARLARI VE CEZALI İFADE EŞLEŞMELERİ
 (Arşivdeki emsal metinlerden tespit edilen somut kararlardan EN AZ 2 ADET karar künyesini şu formatta ver):
@@ -343,13 +385,13 @@ RAPOR FORMATI:
   - **Dosya No & Karar Tarihi:** (Örn: Dosya No: 2023/..., Karar Tarihi: ..., Toplantı No: ...)
   - **Firma / Mecra:** 
   - **Kararda Ceza Alan Orijinal İfade:** (Kararda ceza alan şirketin kullandığı tırnak içi tam reklam cümlesi)
-  - **İncelenen Reklamla Somut Kıyas:** (Bizim metnimizdeki hangi vaat bu kararla örtüşüyor?)
+  - **İncelenen İletişimle Somut Kıyas:** (İncelediğimiz materyaldeki hangi vaat bu kararla örtüşüyor?)
   - **Uygulanan Yaptırım:** (Durdurma ve ... TL İdari Para Cezası)
 * **Emsal Karar 2:**
   - **Dosya No & Karar Tarihi:**
   - **Firma / Mecra:** 
   - **Kararda Ceza Alan Orijinal İfade:**
-  - **İncelenen Reklamla Somut Kıyas:**
+  - **İncelenen İletişimle Somut Kıyas:**
   - **Uygulanan Yaptırım:**
 
 ### III. ÖNGÖRÜLEN İDARİ PARA CEZASI VE YAPTIRIM SKALASI
@@ -357,23 +399,28 @@ RAPOR FORMATI:
 * **6502 Sayılı Kanun Md. 77 Uyarınca Ceza Aralığı:** (Mecraya göre güncel idari para cezası limitleri)
 * **Diğer Yaptırımlar:** (Durdurma, düzeltme veya md. 77/A uyarınca erişim engeli/içerik çıkarma riski)
 
-### IV. MEVZUATA UYGUN REVİZYON VE GÜVENLİ METİN ÖNERİSİ
-* **Revize Reklam Metni:** (Cezai riski sıfırlayan, iddianın ticari etkisini koruyan alternatif metin)
-* **İspat Şartı & Dipnot Standardı:** (Denetimde hazır bulundurulması gereken test/rapor veya görsel altı dipnotu)
+### IV. STRATEJİK HUKUKİ SONUÇ VE EYLEM PLANI
+(Seçilen inceleme moduna göre güvenli revizyon veya Reklam Kurulu şikayet dayanaklarını açıkla):
+* **Stratejik Değerlendirme & Metin:** (Danışan için risksiz alternatif metin / Rakip için şikayet dayanağı)
+* **Gereken İspat / Delil Standartları:** (Klinik test, noter tespiti, arşiv kaydı vb.)
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki danışmanlık yerine geçmez."
 """
                         model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
-                        icerik_listesi = [f"Metin: {reklam_metni}\nSektör: {sektor}\nMecra: {mecra}"]
-                        if yuklenen_gorsel:
-                            icerik_listesi.append(image)
+                        icerik_listesi = [
+                            f"İnceleme Türü: {inceleme_turu}\nSektör: {sektor}\nMecra: {mecra}\nMetin/İddialar: {reklam_metni}\nWeb İçeriği: {url_metni}"
+                        ]
+                        
+                        if yuklenen_gorseller:
+                            for g in yuklenen_gorseller:
+                                icerik_listesi.append(Image.open(g))
                         
                         response = model.generate_content(icerik_listesi)
                         st.session_state.rapor_sonucu = response.text
                         st.session_state.sektor_bilgisi = sektor
                         st.session_state.mecra_bilgisi = mecra
-                        st.session_state.aktif_metin = reklam_metni
+                        st.session_state.aktif_metin = birlestirilmis_metin
                         st.session_state.chat_history = []
                     except Exception as err:
                         st.error(f"Analiz sırasında bir hata oluştu: {err}")
@@ -393,20 +440,20 @@ RAPOR FORMATI:
             except Exception as e:
                 st.warning(f"PDF oluşturma uyarısı: {e}")
         else:
-            st.info("Sol panelden reklam parametrelerini belirleyip analizi başlattığınızda gerekçeli rapor bu alanda listelenecektir.")
+            st.info("Sol panelden reklam parametrelerini, görselleri veya linki ekleyip analizi başlattığınızda rapor bu alanda listelenecektir.")
 
-# İnteraktif Soru-Cevap ve Revizyon Asistanı
+# İnteraktif Danışman Paneli
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
         st.markdown('<div class="section-heading">Hukuki Danışman & Revizyon Asistanı</div>', unsafe_allow_html=True)
-        st.caption("Üretilen rapora, emsal dosyalara veya revize metin alternatiflerinize ilişkin sorularınızı iletebilirsiniz.")
+        st.caption("Üretilen rapora, emsal dosyalara, şikayet süreçlerine veya revize metin alternatiflerinize ilişkin sorularınızı iletebilirsiniz.")
 
         for msg in st.session_state.chat_history:
             with st.chat_message(msg["role"]):
                 st.markdown(msg["content"])
 
-        kullanici_sorusu = st.chat_input("Örn: '3 günde' yerine 'düzenli kullanımda' ifadesini kullanırsak risk ortadan kalkar mı?")
+        kullanici_sorusu = st.chat_input("Sorunuzu buraya yazınız (Örn: Bu rakip ürün için Reklam Kurulu'na başvursak durdurma kararı ne kadar sürede çıkar?)...")
         if kullanici_sorusu:
             st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
             with st.chat_message("user"):
@@ -418,17 +465,17 @@ if st.session_state.rapor_sonucu:
                         chat_model = genai.GenerativeModel(
                             model_name=secilen_model,
                             system_instruction=f"""
-Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan bir Reklam Hukuku Danışmanısın. Kullanıcı daha önce denetlenen reklam ve üretilen rapor hakkında sorular soruyor veya alternatif reklam cümlelerini test ediyor.
+Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan bir Reklam Hukuku Danışmanısın. Kullanıcı daha önce denetlenen reklam, web sayfası veya rakip analizi hakkında sorular soruyor.
 
 BAĞLAM:
 - Sektör: {st.session_state.sektor_bilgisi}
 - Mecra: {st.session_state.mecra_bilgisi}
-- Reklam: {st.session_state.aktif_metin}
-- Rapor:
+- İncelenen İçerik: {st.session_state.aktif_metin}
+- Hukuki Rapor:
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Kullanıcının sorusunu doğrudan Reklam Kurulu içtihatları ve 6502 sayılı Kanun çerçevesinde net, kurumsal ve çözüm odaklı bir dille yanıtlamak; yeni cümle öneriyorsa risk analizini anında yapmaktır.
+Kullanıcının sorusunu doğrudan Reklam Kurulu içtihatları, 6502 sayılı Kanun ve ispat kuralları ışığında net, kurumsal ve stratejik bir dille yanıtlamaktır.
 """
                         )
                         sohbet_gecmisi_prompt = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in st.session_state.chat_history])
