@@ -8,7 +8,7 @@ import glob
 import re
 import requests
 import io
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urljoin
 
 st.set_page_config(
     page_title="Sezer Kara Hukuk Bürosu | Reklam Hukuku Denetim Sistemi",
@@ -111,9 +111,40 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-secilen_model = "gemini-3.6-flash"
+# Çoklu Model & Fallback Yönetimi
+MODEL_LISTESI = [
+    "gemini-2.5-flash",
+    "gemini-1.5-flash",
+    "gemini-2.0-flash",
+    "gemini-3.6-flash"
+]
 
-# Web Sitesinden Metin ve Görselleri Çekme Motoru
+def generate_content_safe(contents, system_instruction=None):
+    last_err = None
+    for model_name in MODEL_LISTESI:
+        try:
+            model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+            response = model.generate_content(contents)
+            if response and response.text:
+                return response.text
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "quota" in err_str.lower() or "resourceexhausted" in err_str.lower():
+                last_err = e
+                continue
+            else:
+                raise e
+    raise Exception(f"Dakikalık API kotası aşıldı. Lütfen 30-40 saniye sonra tekrar deneyiniz. Detay: {last_err}")
+
+# Türkçe Harf Desteği Fonksiyonları
+def tr_upper(text):
+    if not text:
+        return ""
+    mapping = {"i": "İ", "ı": "I", "ğ": "Ğ", "ü": "Ü", "ş": "Ş", "ö": "Ö", "ç": "Ç"}
+    for k, v in mapping.items():
+        text = text.replace(k, v)
+    return text.upper()
+
 def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
         return "", []
@@ -131,9 +162,7 @@ def fetch_url_data(url):
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(res.text, 'html.parser')
                 
-                # 1. Görsel URL'lerini Toplama (og:image + Ürün/Banner img tagleri)
                 img_urls = []
-                
                 og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
                 if og_img and og_img.get("content"):
                     img_urls.append(urljoin(url, og_img["content"]))
@@ -142,14 +171,12 @@ def fetch_url_data(url):
                     src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-original")
                     if src:
                         full_img_url = urljoin(url, src)
-                        # Küçük ikonları ve svg dosyalarını ele
                         if not any(ext in full_img_url.lower() for ext in [".svg", "icon", "logo", "pixel", "avatar", "1x1"]):
                             if full_img_url not in img_urls:
                                 img_urls.append(full_img_url)
                     if len(img_urls) >= 4:
                         break
 
-                # 2. Görselleri İndirip PIL Formatına Çevirme
                 for i_url in img_urls[:3]:
                     try:
                         img_res = requests.get(i_url, headers=headers, timeout=6)
@@ -159,7 +186,6 @@ def fetch_url_data(url):
                     except Exception:
                         continue
 
-                # 3. Metin Temizliği
                 for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
                     s.decompose()
                 raw_text = soup.get_text(separator=' ')
@@ -173,7 +199,6 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
-# Karar Metinlerini Belleğe Yükleme
 @st.cache_data
 def load_and_index_kararlar():
     corpus = ""
@@ -271,15 +296,16 @@ def create_pdf(report_text, baslik_metni):
         pdf.set_font("Roboto", "", 8.5)
         pdf.multi_cell(0, 4.8, temiz_metin)
     else:
-        tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
+        tr_map = str.maketrans("ğĞüÜşŞçÇ", "gGuUsScC")
+        baslik_ascii = baslik_metni.replace("İ", "I").replace("ı", "i").translate(tr_map)
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, baslik_metni.translate(tr_map), ln=True, align="C")
+        pdf.cell(0, 8, baslik_ascii, ln=True, align="C")
         pdf.set_font("Helvetica", "", 8.5)
         pdf.cell(0, 5, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
         pdf.line(10, 24, 200, 24)
         pdf.ln(5)
         pdf.set_font("Helvetica", "", 8.5)
-        ascii_metin = temiz_metin.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+        ascii_metin = temiz_metin.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
         pdf.multi_cell(0, 4.8, ascii_metin)
 
     return bytes(pdf.output())
@@ -479,21 +505,15 @@ RAPOR FORMATI:
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki danışmanlık yerine geçmez."
 """
                         
-                        model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
                         icerik_listesi = [f"Metin: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
-                        
-                        # Kullanıcının yüklediği görseller
                         if yuklenen_gorseller:
                             for g in yuklenen_gorseller:
                                 icerik_listesi.append(Image.open(g))
-                        
-                        # Linkten otomatik kazınan görseller
                         if web_gorselleri:
                             for wg in web_gorselleri:
                                 icerik_listesi.append(wg)
                         
-                        response = model.generate_content(icerik_listesi)
-                        st.session_state.rapor_sonucu = response.text
+                        st.session_state.rapor_sonucu = generate_content_safe(icerik_listesi, system_instruction=prompt)
                         st.session_state.dilekce_sonucu = None
                         st.session_state.chat_history = []
                     except Exception as err:
@@ -579,9 +599,7 @@ SONUÇ VE İSTEM : Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’
 Vekili Av. [İsim Soyisim]
 Sezer Kara Hukuk Bürosu
 """
-                                d_model = genai.GenerativeModel(model_name=secilen_model)
-                                d_res = d_model.generate_content(dilekce_prompt)
-                                st.session_state.dilekce_sonucu = d_res.text
+                                st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
                             except Exception as e:
                                 st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
 
@@ -621,19 +639,15 @@ if st.session_state.rapor_sonucu:
             with st.chat_message("assistant"):
                 with st.spinner("Değerlendiriliyor..."):
                     try:
-                        chat_model = genai.GenerativeModel(
-                            model_name=secilen_model,
-                            system_instruction=f"""
+                        chat_instruction = f"""
 Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan bir Reklam Hukuku Danışmanısın.
 Kullanıcı seçilen mod ({'Danışan Uyum Modu' if is_danisan else 'Rakip Şikayet Modu'}) kapsamında sorular soruyor.
 Rapor: {st.session_state.rapor_sonucu}
 Metin: {reklam_metni}
 Soruyu doğrudan mevzuat ve içtihat ışığında yanıtla.
 """
-                        )
                         sohbet_gecmisi_prompt = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in st.session_state.chat_history])
-                        chat_response = chat_model.generate_content(sohbet_gecmisi_prompt)
-                        cevap_metni = chat_response.text
+                        cevap_metni = generate_content_safe(sohbet_gecmisi_prompt, system_instruction=chat_instruction)
                         st.markdown(cevap_metni)
                         st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
                     except Exception as e:
