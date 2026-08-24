@@ -7,6 +7,8 @@ import os
 import glob
 import re
 import requests
+import io
+from urllib.parse import urljoin, urlparse
 
 st.set_page_config(
     page_title="Sezer Kara Hukuk Bürosu | Reklam Hukuku Denetim Sistemi",
@@ -111,28 +113,67 @@ if not api_key:
 
 secilen_model = "gemini-3.6-flash"
 
-def fetch_url_content(url):
+# Web Sitesinden Metin ve Görselleri Çekme Motoru
+def fetch_url_data(url):
     if not url or not url.strip().startswith(("http://", "https://")):
-        return ""
+        return "", []
+    
+    clean_text = ""
+    downloaded_images = []
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+    }
+    
     try:
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-        }
-        res = requests.get(url.strip(), headers=headers, timeout=8)
+        res = requests.get(url.strip(), headers=headers, timeout=10)
         if res.status_code == 200:
             try:
                 from bs4 import BeautifulSoup
                 soup = BeautifulSoup(res.text, 'html.parser')
+                
+                # 1. Görsel URL'lerini Toplama (og:image + Ürün/Banner img tagleri)
+                img_urls = []
+                
+                og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
+                if og_img and og_img.get("content"):
+                    img_urls.append(urljoin(url, og_img["content"]))
+                
+                for img_tag in soup.find_all("img"):
+                    src = img_tag.get("src") or img_tag.get("data-src") or img_tag.get("data-original")
+                    if src:
+                        full_img_url = urljoin(url, src)
+                        # Küçük ikonları ve svg dosyalarını ele
+                        if not any(ext in full_img_url.lower() for ext in [".svg", "icon", "logo", "pixel", "avatar", "1x1"]):
+                            if full_img_url not in img_urls:
+                                img_urls.append(full_img_url)
+                    if len(img_urls) >= 4:
+                        break
+
+                # 2. Görselleri İndirip PIL Formatına Çevirme
+                for i_url in img_urls[:3]:
+                    try:
+                        img_res = requests.get(i_url, headers=headers, timeout=6)
+                        if img_res.status_code == 200 and len(img_res.content) > 4000:
+                            pil_img = Image.open(io.BytesIO(img_res.content)).convert("RGB")
+                            downloaded_images.append(pil_img)
+                    except Exception:
+                        continue
+
+                # 3. Metin Temizliği
                 for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
                     s.decompose()
-                text = soup.get_text(separator=' ')
-            except ImportError:
-                text = re.sub(r'<[^>]+>', ' ', res.text)
-            return ' '.join(text.split())[:4500]
-    except Exception as e:
-        return f"[Web içeriği çekilemedi: {e}]"
-    return ""
+                raw_text = soup.get_text(separator=' ')
+                clean_text = ' '.join(raw_text.split())[:4500]
 
+            except ImportError:
+                clean_text = re.sub(r'<[^>]+>', ' ', res.text)[:4500]
+
+    except Exception as e:
+        clean_text = f"[Web içeriği çekilemedi: {e}]"
+        
+    return clean_text, downloaded_images
+
+# Karar Metinlerini Belleğe Yükleme
 @st.cache_data
 def load_and_index_kararlar():
     corpus = ""
@@ -287,18 +328,18 @@ with sol_kolon:
         ])
         
         reklam_url = st.text_input(
-            "Web Sayfası / Ürün / Reklam Linki (Opsiyonel)",
+            "Web Sayfası / Ürün / Reklam Linki (Görseller ve Metin Otomatik Taranır)",
             placeholder="https://www.site.com/urun veya reklam URL'si..."
         )
 
         reklam_metni = st.text_area(
             "Reklam Metni / Ticari İddialar",
-            height=140,
+            height=130,
             placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz..."
         )
         
         yuklenen_gorseller = st.file_uploader(
-            "Reklam Görselleri / Taslaklar (Çoklu Yükleme)",
+            "Manuel Reklam Görselleri / Taslaklar (Çoklu Yükleme)",
             type=["jpg", "jpeg", "png"],
             accept_multiple_files=True
         )
@@ -307,7 +348,7 @@ with sol_kolon:
             gorsel_cols = st.columns(min(len(yuklenen_gorseller), 4))
             for idx, g_dosya in enumerate(yuklenen_gorseller):
                 g_img = Image.open(g_dosya)
-                gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
+                gorsel_cols[idx % 4].image(g_img, caption=f"Yüklenen Görsel {idx+1}", use_container_width=True)
 
         buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
         analiz_butonu = st.button(buton_etiketi, type="primary")
@@ -324,11 +365,13 @@ with sag_kolon:
                 st.warning("Lütfen metin giriniz, link paylaşınız veya görsel yükleyiniz.")
             else:
                 url_metni = ""
-                if reklam_url:
-                    with st.spinner("Web sayfası taranıyor..."):
-                        url_metni = fetch_url_content(reklam_url)
+                web_gorselleri = []
                 
-                with st.spinner("Reklam Kurulu içtihatları ve mevzuat çerçevesinde inceleniyor..."):
+                if reklam_url:
+                    with st.spinner("Web sayfası taranıyor; ürün metinleri ve görselleri indiriliyor..."):
+                        url_metni, web_gorselleri = fetch_url_data(reklam_url)
+                
+                with st.spinner("Reklam Kurulu içtihatları ve görsel/metin iddiaları inceleniyor..."):
                     try:
                         genai.configure(api_key=api_key)
                         birlestirilmis_metin = f"{reklam_metni}\n\n[Web İçeriği]: {url_metni}" if url_metni else reklam_metni
@@ -337,7 +380,7 @@ with sag_kolon:
                         if is_danisan:
                             prompt = f"""
 Sen Sezer Kara Hukuk Bürosu bünyesinde çalışan kıdemli bir Reklam Hukuku ve Mevzuat Uyum Danışmanısın.
-Müvekkilimiz, kendi reklam taslağının Reklam Kurulu denetimlerinden ceza almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
+Müvekkilimiz, kendi reklam taslağının (metinler, yüklenen görseller veya web sayfasındaki afiş/ürün ambalajları) Reklam Kurulu denetimlerinden ceza almadan geçmesi için bir 'Uyumluluk ve Güvenli Revizyon Raporu' talep etmektedir.
 
 Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ EMSAL METİNLERİ ===
@@ -348,13 +391,14 @@ Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği 
 Sektör: {sektor}
 Mecra: {mecra}
 İçerik: {birlestirilmis_metin}
+(Görseller üzerindeki tüm metin, logo ve ambalaj iddialarını da doğrudan incele)
 
 RAPOR FORMATI:
 
 ### [RİSK DERECESİ: YÜKSEK (KIRMIZI) / ORTA (SARI) / DÜŞÜK (YEŞİL)] - Risk Skoru: [0-100]
 
 ### I. MEVZUAT UYUM ANALİZİ VE RİSKLİ İFADELER
-(Taslak metindeki riskli ifadeleri tek tek ayıkla. 6502 md. 61, Ticari Reklam Yönetmeliği, TİTCK/TGK Kılavuzları açısından açıkla):
+(Taslak metindeki ve görsellerdeki riskli iddiaları tek tek ayıkla. 6502 md. 61, Ticari Reklam Yönetmeliği, TİTCK/TGK Kılavuzları açısından açıkla):
 * **[Riskli İfade 1]:** (Neden mevzuata aykırı? Kurul'un ortalama tüketici algısı ve ispat yükü yaklaşımı nedir?)
 * **[Riskli İfade 2]:**
 * **[Riskli İfade 3]:**
@@ -389,7 +433,7 @@ RAPOR FORMATI:
                         else:
                             prompt = f"""
 Sen Sezer Kara Hukuk Bürosu bünyesinde görev yapan kıdemli bir Reklam ve Haksız Rekabet Avukatısın.
-Müvekkilimiz, pazardaki bir rakip ürünün / reklamın mevzuata aykırı olduğunu, tüketiciyi aldattığını ve haksız rekabet yarattığını düşünerek inceleme talep etmektedir.
+Müvekkilimiz, pazardaki bir rakip ürünün / reklamın (metin, web sayfası veya görseller üzerindeki ambalaj/banner iddialarının) mevzuata aykırı olduğunu, tüketiciyi aldattığını ve haksız rekabet yarattığını düşünerek inceleme talep etmektedir.
 
 Aşağıda karar arşivinden incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
 === RESMİ EMSAL METİNLERİ ===
@@ -406,7 +450,7 @@ RAPOR FORMATI:
 ### [İHLAL DERECESİ: AĞIR (KIRMIZI) / ORTA (SARI) / HAFİF (YEŞİL)] - İhlal Skoru: [0-100]
 
 ### I. HAKSIZ REKABET VE MEVZUATA AYKIRILIK TESPİTİ
-(Rakip tanıtımdaki hukuka aykırı unsurları; 6502 md. 61, TTK md. 54-55 Haksız Rekabet ve Kılavuz hükümleri çerçevesinde tek tek gerekçelendir):
+(Rakip tanıtımdaki ve görsellerdeki hukuka aykırı unsurları; 6502 md. 61, TTK md. 54-55 Haksız Rekabet ve Kılavuz hükümleri çerçevesinde tek tek gerekçelendir):
 * **[Hukuka Aykırı İfade / Uygulama 1]:** (Haksız ticari uygulama ve yanıltıcı niteliği)
 * **[Hukuka Aykırı İfade / Uygulama 2]:**
 
@@ -428,7 +472,7 @@ RAPOR FORMATI:
 * **İdari Tedbirler:** (Reklamı durdurma, düzeltme, internetten içerik çıkarma / erişim engeli)
 
 ### IV. ŞİKAYET VE BAŞVURU STRATEJİSİ
-* **Reklam Kurulu Başvuru Dayanakları:** (Dilekçede öne çıkarılacak en güçlü 2 argüman)
+* **Reklam Kurulu Başvuru Dayanakları:** (Dilekçede öne çıkarılacak en güçlü argümanlar)
 * **Gereken Delil Tespiti:** (Noter tespiti, URL kaydı, arşiv kaydı vb.)
 
 ### V. YASAL ŞERH
@@ -437,9 +481,16 @@ RAPOR FORMATI:
                         
                         model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
                         icerik_listesi = [f"Metin: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
+                        
+                        # Kullanıcının yüklediği görseller
                         if yuklenen_gorseller:
                             for g in yuklenen_gorseller:
                                 icerik_listesi.append(Image.open(g))
+                        
+                        # Linkten otomatik kazınan görseller
+                        if web_gorselleri:
+                            for wg in web_gorselleri:
+                                icerik_listesi.append(wg)
                         
                         response = model.generate_content(icerik_listesi)
                         st.session_state.rapor_sonucu = response.text
@@ -480,34 +531,47 @@ RAPOR FORMATI:
                         st.warning(f"PDF uyarısı: {e}")
 
                 with tab_dilekce:
-                    st.caption("İncelenen rakip iletişim hakkında Reklam Kurulu'na sunulmak üzere 4 maddeli avukat şikayet dilekçesi oluşturur.")
+                    st.caption("İncelenen rakip tanıtım hakkında Reklam Kurulu Başkanlığı'na sunulmak üzere doğrudan dava/başvuru pratiğinde kullanılan formatta dilekçe oluşturur.")
                     
                     if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
-                        with st.spinner("Şikayet dilekçesi yazılıyor..."):
+                        with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
                             try:
                                 dilekce_prompt = f"""
-Sen Sezer Kara Hukuk Bürosu'nda görev yapan deneyimli bir Reklam ve Tüketici Hukuku Avukatısın.
-Aşağıdaki rakip inceleme verisini kullanarak Reklam Kurulu Başkanlığı'na sunulmak üzere net, somut ve 4 ana maddeden oluşan bir ŞİKAYET DİLEKÇESİ kaleme al:
+Sen Sezer Kara Hukuk Bürosu'nda görev yapan kıdemli bir Reklam ve Haksız Rekabet Hukuku Avukatısın.
+Aşağıda incelenen rakip iletişim vakıası ve tespit edilen mevzuat aykırılıkları yer almaktadır:
 
-İNCELEME RAPORU:
+İNCELEME RAPORU VE VAKIA VERİSİ:
 {st.session_state.rapor_sonucu}
 
-DİLEKÇE FORMATI:
+GÖREVİN:
+Yapay zeka robotik şablonlarından (örn: '1. MADDİ VAKIALAR', '2. HUKUKİ DELİLLER' gibi soyut kalıplardan) tamamen uzak; Türk idari ve tüketici yargısı pratiğinde tecrübeli bir avukatın kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net ve etkili bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+
+DİLEKÇEYİ AYNEN AŞAĞIDAKİ YAPI VE DİLDE OLUŞTUR:
 
 T.C. TİCARET BAKANLIĞI
 REKLAM KURULU BAŞKANLIĞINA
 ANKARA
 
 ŞİKAYET EDEN : [Müvekkil Şirket Unvanı]
+ADRES : [Müvekkil Şirket Adresi]
 VEKİLİ : Av. [Vekil Adı Soyadı] - Sezer Kara Hukuk Bürosu
 ŞİKAYET EDİLEN : [Şikayet Edilen Firma / Satıcı / Hesap Bilgisi]
-ŞİKAYET KONUSU : Şikayet edilen tarafça {mecra} üzerinden yürütülen tanıtımlarda yer alan hukuka aykırı, yanıltıcı ve haksız rekabete yol açan iddiaların incelenerek idari yaptırım (durdurma ve idari para cezası) uygulanması talebidir.
+ADRES : [Şikayet Edilen Adres / İnternet Sitesi / Mecra]
+ŞİKAYET KONUSU : Şikayet edilen tarafça yürütülen tanıtımlarda yer alan tüketiciyi yanıltıcı, haksız rekabete yol açıcı ve mevzuata aykırı nitelikteki iddialar nedeniyle idari yaptırım uygulanması ve anılan reklamların durdurulması talebidir.
 
 AÇIKLAMALAR:
-1. (Somut Vakıa ve İnceleme Konusu İddia: Şikayet edilen tarafın tanıtımlarında hangi somut ifadelerin yer aldığı, nerede yayınlandığı ve bu iddianın neden mevzuata aykırı ve tüketiciyi yanıltıcı olduğuna dair net tespit).
-2. (Teknik / Sektörel / Bilimsel Gerçeklik: İddia edilen etkinin, sürenin, içeriğin veya üstünlük vaadinin ürün kategorisinin doğası ve bilimsel/sektörel gerçekler karşısında neden gerçeğe aykırı, imkansız veya kategorideki tüm ürünler için zaten geçerli olan bir standart olduğu).
-3. (İlgili Kılavuz ve Özel Mevzuat İhlali: TİTCK / TGK / İndirim / Fiyat Kılavuzları hükümleri uyarınca kategoride zaten bulunmayan/bulunması gereken özelliklerin üstünlük gibi sunulamayacağı ve izin verilmeyen beyanların kullanılamayacağı ilkesi).
-4. (6502 sayılı Kanun md. 61 ve Ticari Reklam Yönetmeliği md. 7, 9, 10, 11 İhlali & Tüketici Algısı: Ortalama tüketicinin bilgi eksikliğinin istismar edilmesi, dürüst rakiplerin haksız yere şaibe altında bırakılması ve pazarda doğan haksız rekabet ortamının gerekçelendirilmesi).
+
+1. [ŞİKAYET EDİLENİN REKLAM VE AMBALAJLARDA KULLANDIĞI SOMUT İDDİANIN YANILTICI NİTELİĞİNİ ANLATAN TAM BİR CÜMLE BAŞLIK]:
+(Şikayet edilenin ürün tanıtımında, sosyal medyada veya ambalajda hangi somut iddia ve ifadeleri kullandığı, bu tanıtımın nerede tespit edildiği ve ortalama tüketici nezdinde nasıl haksız bir algı yarattığı).
+
+2. [İNCELENEN ÜRÜN KATEGORİSİNİN BİLİMSEL / SEKTÖREL GERÇEKLİĞİ KARŞISINDA BU İDDİANIN İMKANSIZ VEYA STANDART BİR ZORUNLULUK OLDUĞUNU BELİRTEN TAM BİR CÜMLE BAŞLIK]:
+(Ürünün doğası, kimyasal/teknik içeriği veya kullanım amacı gereği vaat edilen etkinin neden gerçeğe aykırı olduğu veya kategorideki tüm ürünlerde zaten bulunması/bulunmaması gereken genel bir niteliğin münhasır bir üstünlük gibi sunulduğu).
+
+3. [TİTCK / TGK KILAVUZLARI VE SEKTÖREL DÜZENLEMELER UYARINCA BU TÜR İDDİALARIN YASAKLANDIĞINI GÖSTEREN TAM BİR CÜMLE BAŞLIK]:
+(İlgili Kılavuz hükümleri uyarınca ürünün sahip olmadığı veya kategorideki tüm ürünlerde zaten mevcut olan genel özelliklerin yalnızca kendisine aitmiş gibi sunulamayacağı ve izin verilmeyen sağlık/üstünlük beyanlarının kullanılamayacağı ilkesi).
+
+4. [6502 SAYILI KANUN VE TİCARİ REKLAM YÖNETMELİĞİ UYARINCA SÖZ KONUSU TANITIMLARIN HAKSIZ REKABET VE ALDATICI REKLAM TEŞKİL ETTİĞİNİ İZAH EDEN TAM BİR CÜMLE BAŞLIK]:
+(6502 sayılı Kanun md. 61 ile Ticari Reklam Yönetmeliği md. 7, 9, 10, 11 uyarınca tüketicinin bilgi eksikliğinin istismar edildiği, dürüst rakiplerin haksız yere şaibe altında bırakıldığı ve pazardaki dürüst rekabet ortamının bozulduğu).
 
 SONUÇ VE İSTEM : Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayınının tedbiren ve nihai olarak DURDURULMASINA, yayından kaldırılmasına ve sorumlu şirket/şahıs hakkında en üst hadden İDARİ PARA CEZASI ile cezalandırılmasına karar verilmesini vekaleten saygılarımızla arz ve talep ederiz.
 
