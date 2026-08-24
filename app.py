@@ -8,20 +8,85 @@ import glob
 import re
 import requests
 
+# Sayfa Yapılandırması
 st.set_page_config(
-    page_title="AdShield - Reklam Kurulu Emsal & Hukuki Risk Analizi",
-    page_icon="🛡️",
-    layout="wide"
+    page_title="AdShield AI - Reklam Hukuku Denetim Platformu",
+    page_icon="⚖️",
+    layout="wide",
+    initial_sidebar_state="expanded"
 )
 
-st.title("🛡️ AdShield: Reklam Hukuku ve Emsal Risk Analiz Sistemi")
-st.caption("Resmi Reklam Kurulu İçtihatları, Birebir Emsal Kıyaslaması ve İnteraktif Uyum Danışmanı")
+# Kurumsal SaaS CSS Tasarımı
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    
+    html, body, [class*="css"] {
+        font-family: 'Inter', sans-serif;
+    }
+    
+    /* Üst Banner Kartı */
+    .hero-container {
+        background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%);
+        padding: 24px;
+        border-radius: 14px;
+        color: white;
+        margin-bottom: 24px;
+        border: 1px solid #334155;
+    }
+    .hero-title {
+        font-size: 24px;
+        font-weight: 700;
+        margin-bottom: 6px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+    }
+    .hero-subtitle {
+        font-size: 13px;
+        color: #94a3b8;
+        margin: 0;
+    }
+
+    /* Form ve Kart Kutuları */
+    .stTextArea textarea {
+        border-radius: 10px;
+        border: 1px solid #cbd5e1;
+        font-size: 13.5px;
+    }
+    
+    /* Buton Tasarımı */
+    .stButton button[kind="primary"] {
+        background: #2563eb;
+        color: white;
+        font-weight: 600;
+        border-radius: 8px;
+        padding: 10px 20px;
+        border: none;
+        width: 100%;
+        transition: all 0.2s;
+    }
+    .stButton button[kind="primary"]:hover {
+        background: #1d4ed8;
+        box-shadow: 0 4px 12px rgba(37, 99, 235, 0.25);
+    }
+</style>
+""", unsafe_allow_html=True)
+
+# Üst Başlık Banner
+st.markdown("""
+<div class="hero-container">
+    <div class="hero-title">⚖️ AdShield AI: Reklam Kurulu Denetim & Emsal Analiz Motoru</div>
+    <p class="hero-subtitle">200+ Resmi Bülten İçtihadı • 6502 Sayılı Kanun md. 61/77 Risk Modellemesi • Otomatik Hukuki Mütalaa</p>
+</div>
+""", unsafe_allow_html=True)
 
 # API Anahtarı
 api_key = st.secrets.get("GEMINI_API_KEY", None)
 if not api_key:
-    st.sidebar.header("Ayarlar")
-    api_key = st.sidebar.text_input("Gemini API Anahtarı:", type="password")
+    with st.sidebar:
+        st.header("🔑 Lisans & Erişim")
+        api_key = st.text_input("Gemini API Anahtarı:", type="password")
 
 secilen_model = "gemini-3.6-flash"
 
@@ -46,7 +111,6 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
-# Hukuki Süzgeç ve Emsal Karar Eşleştirici
 def get_relevant_emsaller(metin, sektor, top_k=8):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi."
@@ -99,7 +163,6 @@ def clean_markdown_text(text):
     text = text.replace("**", "").replace("*", "")
     return text
 
-# Türkçe Karakter Destekli PDF Motoru
 def create_pdf(report_text, sektor_adi, mecra_adi):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -151,7 +214,7 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
 
     return bytes(pdf.output())
 
-# Oturum Durumu Yönetimi
+# Session State Tanımlamaları
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "sektor_bilgisi" not in st.session_state:
@@ -162,48 +225,71 @@ if "aktif_metin" not in st.session_state:
     st.session_state.aktif_metin = ""
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "taslak_metin" not in st.session_state:
+    st.session_state.taslak_metin = ""
 
-# Arayüz
-col1, col2 = st.columns([1, 1])
+# İki Kolonlu Çalışma Alanı
+sol_kolon, sag_kolon = st.columns([1, 1.15], gap="medium")
 
-with col1:
-    st.subheader("1. İnceleme Parametreleri")
-    sektor = st.selectbox("Sektör Seçin", [
-        "Kozmetik & Kişisel Bakım / Anne-Bebek",
-        "Takviye Edici Gıda & Sağlık",
-        "E-Ticaret & İndirim Kampanyaları",
-        "Sosyal Medya & Influencer Reklamları",
-        "Diğer"
-    ])
-    mecra = st.selectbox("Yayın Mecrası", [
-        "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)",
-        "Ulusal Televizyon Kanalı",
-        "Yerel Televizyon / Radyo",
-        "Açık Hava (Billboard, Broşür vb.)"
-    ])
-    reklam_metni = st.text_area("Reklam Metni / Caption / İddialar", height=130)
-    yuklenen_gorsel = st.file_uploader("Reklam Görseli / Taslak / Story Yükle", type=["jpg", "jpeg", "png"])
-    
-    if yuklenen_gorsel:
-        image = Image.open(yuklenen_gorsel)
-        st.image(image, caption="Analize Alınan Taslak", use_container_width=True)
+with sol_kolon:
+    with st.container(border=True):
+        st.markdown("#### 📝 Reklam ve Parametre Girişi")
+        
+        # Hızlı Test Doldurma Butonları
+        st.caption("⚡ Hızlı Örnek Senaryo Yükle:")
+        senaryo_cols = st.columns(3)
+        if senaryo_cols[0].button("Kozmetik"):
+            st.session_state.taslak_metin = "Dermatologların 1 numaralı tercihi! Tamamen %100 bitkisel aktiflerle leke ve kırışıklıkları 48 saatte tamamen yok eder. Sağlık Bakanlığı onaylı formülüyle botoks etkisini evinize getirir."
+        if senaryo_cols[1].button("Takviye Gıda"):
+            st.session_state.taslak_metin = "Eklem ağrılarına ve kireçlenmeye kesin son! Bağışıklık sisteminizi güçlendirerek dizdeki iltihabı kurutur, ameliyatsız tedavi sağlar."
+        if senaryo_cols[2].button("E-Ticaret"):
+            st.session_state.taslak_metin = "Yılın en büyük efsane indirimi! Türkiye'nin en ucuz robot süpürgesi sadece bugün 24.999 TL yerine 4.999 TL! Son 3 ürün, tükeniyor."
 
-    analiz_butonu = st.button("Hukuki İnceleme ve Emsal Taramasını Başlat", type="primary")
+        sektor = st.selectbox("Sektör", [
+            "Kozmetik & Kişisel Bakım / Anne-Bebek",
+            "Takviye Edici Gıda & Sağlık",
+            "E-Ticaret & İndirim Kampanyaları",
+            "Sosyal Medya & Influencer Reklamları",
+            "Diğer"
+        ])
+        
+        mecra = st.selectbox("Yayın Mecrası", [
+            "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)",
+            "Ulusal Televizyon Kanalı",
+            "Yerel Televizyon / Radyo",
+            "Açık Hava (Billboard, Broşür vb.)"
+        ])
+        
+        reklam_metni = st.text_area(
+            "Reklam Metni / Caption / İddialar",
+            value=st.session_state.taslak_metin,
+            height=120,
+            placeholder="Denetlemek istediğiniz reklam metnini buraya yapıştırın..."
+        )
+        
+        yuklenen_gorsel = st.file_uploader("Görsel / Story / Taslak Yükle (Opsiyonel)", type=["jpg", "jpeg", "png"])
+        if yuklenen_gorsel:
+            image = Image.open(yuklenen_gorsel)
+            st.image(image, caption="Yüklenen Görsel", use_container_width=True)
 
-with col2:
-    st.subheader("2. Hukuki Uyum ve İçtihat Raporu")
-    if analiz_butonu:
-        if not api_key:
-            st.error("Lütfen bir Gemini API anahtarı sağlayın.")
-        elif not reklam_metni and not yuklenen_gorsel:
-            st.warning("Lütfen analiz için en az bir metin veya görsel yükleyin.")
-        else:
-            with st.spinner("Reklam Kurulu içtihatları taranıyor ve hukuki risk analizi hazırlanıyor..."):
-                try:
-                    genai.configure(api_key=api_key)
-                    ilgili_emsaller = get_relevant_emsaller(reklam_metni, sektor)
-                    
-                    prompt = f"""
+        analiz_butonu = st.button("⚖️ Hukuki Denetimi ve Emsal Taramasını Başlat", type="primary")
+
+with sag_kolon:
+    with st.container(border=True):
+        st.markdown("#### 📊 Denetim ve Hukuki Mütalaa Merkezi")
+        
+        if analiz_butonu:
+            if not api_key:
+                st.error("Lütfen sol panelden geçerli bir Gemini API anahtarı girin.")
+            elif not reklam_metni and not yuklenen_gorsel:
+                st.warning("Lütfen denetim için metin girin veya görsel yükleyin.")
+            else:
+                with st.spinner("İçtihat veri tabanı taranıyor, maddi vakıa analizi hazırlanıyor..."):
+                    try:
+                        genai.configure(api_key=api_key)
+                        ilgili_emsaller = get_relevant_emsaller(reklam_metni, sektor)
+                        
+                        prompt = f"""
 Sen; Ticaret Bakanlığı Reklam Kurulu kararları, 6502 sayılı Tüketicinin Korunması Hakkında Kanun (özellikle md. 61 ve md. 77), Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ile TİTCK ve TGK Kılavuzları konusunda uzmanlaşmış kıdemli bir Reklam Hukuku Denetçisi ve Danışmansın.
 
 Aşağıda karar külliyatından incelenen iddialarla en yüksek vakıa benzerliği gösteren somut Reklam Kurulu kararları verilmiştir:
@@ -255,80 +341,83 @@ RAPOR FORMATI:
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Avukatlık Kanunu kapsamında hukuki mütalaa teşkil etmez."
 """
-                    model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
-                    icerik_listesi = [f"Metin: {reklam_metni}\nSektör: {sektor}\nMecra: {mecra}"]
-                    if yuklenen_gorsel:
-                        icerik_listesi.append(image)
-                    
-                    response = model.generate_content(icerik_listesi)
-                    st.session_state.rapor_sonucu = response.text
-                    st.session_state.sektor_bilgisi = sektor
-                    st.session_state.mecra_bilgisi = mecra
-                    st.session_state.aktif_metin = reklam_metni
-                    st.session_state.chat_history = []  # Yeni analizde sohbeti sıfırla
-                except Exception as err:
-                    st.error(f"Analiz sırasında bir hata oluştu: {err}")
+                        model = genai.GenerativeModel(model_name=secilen_model, system_instruction=prompt)
+                        icerik_listesi = [f"Metin: {reklam_metni}\nSektör: {sektor}\nMecra: {mecra}"]
+                        if yuklenen_gorsel:
+                            icerik_listesi.append(image)
+                        
+                        response = model.generate_content(icerik_listesi)
+                        st.session_state.rapor_sonucu = response.text
+                        st.session_state.sektor_bilgisi = sektor
+                        st.session_state.mecra_bilgisi = mecra
+                        st.session_state.aktif_metin = reklam_metni
+                        st.session_state.chat_history = []
+                    except Exception as err:
+                        st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
-    if st.session_state.rapor_sonucu:
-        st.markdown(st.session_state.rapor_sonucu)
-        try:
-            pdf_verisi = create_pdf(st.session_state.rapor_sonucu, st.session_state.sektor_bilgisi, st.session_state.mecra_bilgisi)
-            st.download_button(
-                label="📄 Hukuki Risk ve Emsal Raporunu İndir (PDF)",
-                data=pdf_verisi,
-                file_name=f"AdShield_Hukuki_Risk_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                mime="application/pdf",
-                type="secondary"
-            )
-        except Exception as e:
-            st.warning(f"PDF oluşturulurken bir uyarı oluştu: {e}")
+        if st.session_state.rapor_sonucu:
+            # Rapor İçeriği
+            st.markdown(st.session_state.rapor_sonucu)
+            
+            # PDF İndirme Butonu
+            try:
+                pdf_verisi = create_pdf(st.session_state.rapor_sonucu, st.session_state.sektor_bilgisi, st.session_state.mecra_bilgisi)
+                st.download_button(
+                    label="📥 Resmi Mütalaa Raporunu İndir (PDF)",
+                    data=pdf_verisi,
+                    file_name=f"AdShield_Hukuki_Risk_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    type="secondary"
+                )
+            except Exception as e:
+                st.warning(f"PDF oluşturulurken bir uyarı oluştu: {e}")
+        else:
+            st.info("Sol taraftan parametreleri belirleyip analizi başlattığınızda gerekçeli rapor bu alanda görüntülenecektir.")
 
-# Raporun Altında İnteraktif Soru-Cevap ve Revizyon Danışmanı
+# İnteraktif Soru-Cevap & Danışman Paneli
 if st.session_state.rapor_sonucu:
-    st.write("---")
-    st.subheader("💬 Hukuki Danışman & Revizyon Asistanı")
-    st.caption("Üretilen rapora, emsal kararlara veya yeni alternatif metin önerilerinize dair aklınıza takılanları sorabilirsiniz.")
+    st.write("")
+    with st.container(border=True):
+        st.markdown("#### 💬 Hukuki Danışman & Revizyon Asistanı")
+        st.caption("Üretilen mütalaaya, cezai yaptırımlara veya yeni alternatif metinlerinize dair sorularınızı sorabilirsiniz.")
 
-    # Geçmiş mesajları listele
-    for msg in st.session_state.chat_history:
-        with st.chat_message(msg["role"]):
-            st.markdown(msg["content"])
+        for msg in st.session_state.chat_history:
+            with st.chat_message(msg["role"]):
+                st.markdown(msg["content"])
 
-    # Yeni soru girişi
-    kullanici_sorusu = st.chat_input("Örn: '3 günde' yerine 'düzenli kullanımda' dersem ceza riski biter mi?")
-    if kullanici_sorusu:
-        st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
-        with st.chat_message("user"):
-            st.markdown(kullanici_sorusu)
+        kullanici_sorusu = st.chat_input("Örn: '48 saatte' yerine 'düzenli kullanımda' yazarsam ceza riski kalkar mı?")
+        if kullanici_sorusu:
+            st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
+            with st.chat_message("user"):
+                st.markdown(kullanici_sorusu)
 
-        with st.chat_message("assistant"):
-            with st.spinner("Hukuki değerlendirme yapılıyor..."):
-                try:
-                    chat_model = genai.GenerativeModel(
-                        model_name=secilen_model,
-                        system_instruction=f"""
+            with st.chat_message("assistant"):
+                with st.spinner("Hukuki değerlendirme yapılıyor..."):
+                    try:
+                        chat_model = genai.GenerativeModel(
+                            model_name=secilen_model,
+                            system_instruction=f"""
 Sen bir Reklam Hukuku Danışmanısın. Kullanıcı daha önce sistem tarafından denetlenen bir reklam ve üretilen rapor hakkında sana soru soruyor veya alternatif reklam metinlerini test etmek istiyor.
 
 BAĞLAM BİLGİLERİ:
-- İncelenen Sektör: {st.session_state.sektor_bilgisi}
-- Yayın Mecrası: {st.session_state.mecra_bilgisi}
-- Orijinal Reklam Metni: {st.session_state.aktif_metin}
-- Üretilen Hukuki Rapor:
+- Sektör: {st.session_state.sektor_bilgisi}
+- Mecra: {st.session_state.mecra_bilgisi}
+- Orijinal Metin: {st.session_state.aktif_metin}
+- Hukuki Rapor:
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Kullanıcının sorusunu doğrudan Reklam Kurulu içtihatları, 6502 sayılı Kanun ve ispat kuralları ışığında, net ve çözüm odaklı bir hukukçu diliyle yanıtlamak; yeni metin öneriyorsa risk analizini anında yapmaktır.
+Kullanıcının sorusunu doğrudan Reklam Kurulu içtihatları ve 6502 sayılı Kanun çerçevesinde net, stratejik ve çözüm odaklı bir dille yanıtlamaktır.
 """
-                    )
-                    
-                    # Sohbet geçmişini modele aktar
-                    sohbet_gecmisi_prompt = ""
-                    for h in st.session_state.chat_history:
-                        sohbet_gecmisi_prompt += f"\n{h['role'].upper()}: {h['content']}"
+                        )
+                        
+                        sohbet_gecmisi_prompt = ""
+                        for h in st.session_state.chat_history:
+                            sohbet_gecmisi_prompt += f"\n{h['role'].upper()}: {h['content']}"
 
-                    chat_response = chat_model.generate_content(sohbet_gecmisi_prompt)
-                    cevap_metni = chat_response.text
-                    st.markdown(cevap_metni)
-                    st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
-                except Exception as e:
-                    st.error(f"Yanıt üretilirken bir hata oluştu: {e}")
+                        chat_response = chat_model.generate_content(sohbet_gecmisi_prompt)
+                        cevap_metni = chat_response.text
+                        st.markdown(cevap_metni)
+                        st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
+                    except Exception as e:
+                        st.error(f"Yanıt üretilirken bir hata oluştu: {e}")
