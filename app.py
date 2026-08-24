@@ -91,6 +91,8 @@ def get_relevant_emsaller(metin, sektor, top_k=8):
 def clean_markdown_text(text):
     if not text:
         return ""
+    text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
+    text = text.replace("–", "-").replace("—", "-").replace("…", "...")
     text = text.replace("### ", "").replace("## ", "").replace("# ", "")
     text = text.replace("**", "").replace("*", "")
     return text
@@ -101,14 +103,13 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    font_path = "DejaVuSans.ttf"
+    font_path = "Roboto-Regular.ttf"
     font_yuklendi = False
     
-    # UTF-8 ve Türkçe karakterleri tam destekleyen DejaVu Sans fontunu temin et
     if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
         try:
-            url = "https://raw.githubusercontent.com/dejavu-fonts/dejavu-fonts/master/resources/DejaVuSans.ttf"
-            res = requests.get(url, timeout=6)
+            url = "https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.1.66/fonts/Roboto/Roboto-Regular.ttf"
+            res = requests.get(url, timeout=10)
             if res.status_code == 200 and len(res.content) > 10000:
                 with open(font_path, "wb") as f:
                     f.write(res.content)
@@ -117,7 +118,7 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
 
     if os.path.exists(font_path) and os.path.getsize(font_path) > 10000:
         try:
-            pdf.add_font("DejaVu", "", font_path)
+            pdf.add_font("Roboto", "", font_path)
             font_yuklendi = True
         except Exception:
             font_yuklendi = False
@@ -125,16 +126,15 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
     temiz_metin = clean_markdown_text(report_text)
 
     if font_yuklendi:
-        pdf.set_font("DejaVu", "", 13)
+        pdf.set_font("Roboto", "", 13)
         pdf.cell(0, 9, "AdShield - Reklam Kurulu Emsal Karar ve Risk Raporu", ln=True, align="C")
-        pdf.set_font("DejaVu", "", 8.5)
+        pdf.set_font("Roboto", "", 8.5)
         pdf.cell(0, 5, f"Sektör: {sektor_adi} | Mecra: {mecra_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
         pdf.line(10, 26, 200, 26)
         pdf.ln(6)
-        pdf.set_font("DejaVu", "", 8.5)
-        pdf.multi_cell(0, 5, temiz_metin)
+        pdf.set_font("Roboto", "", 8.5)
+        pdf.multi_cell(0, 4.8, temiz_metin)
     else:
-        # Font indirilemezse ASCII dönüşümlü güvenli mod
         tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
         pdf.set_font("Helvetica", "B", 13)
         pdf.cell(0, 9, "AdShield - Reklam Kurulu Emsal Karar ve Risk Raporu", ln=True, align="C")
@@ -145,7 +145,7 @@ def create_pdf(report_text, sektor_adi, mecra_adi):
         pdf.ln(6)
         pdf.set_font("Helvetica", "", 8.5)
         ascii_metin = temiz_metin.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-        pdf.multi_cell(0, 5, ascii_metin)
+        pdf.multi_cell(0, 4.8, ascii_metin)
 
     return bytes(pdf.output())
 
