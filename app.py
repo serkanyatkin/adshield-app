@@ -3,6 +3,8 @@ import google.generativeai as genai
 from PIL import Image
 from fpdf import FPDF
 from datetime import datetime
+import os
+import requests
 
 st.set_page_config(page_title="AdShield - Reklam Risk Denetimi", layout="wide")
 
@@ -38,41 +40,64 @@ DENETİM ALANLARI:
 - **Yasal Şerh:** "Bu rapor teknik bir ön risk analizidir; 1136 sayılı Kanun kapsamında hukuki mütalaa teşkil etmez."
 """
 
-def safe_pdf_text(text):
+# Türkçe Font İndirme ve Yönetme
+FONT_PATH = "Roboto-Regular.ttf"
+FONT_URL = "https://cdn.jsdelivr.net/gh/googlefonts/roboto@main/src/hinted/Roboto-Regular.ttf"
+
+def ensure_font():
+    if not os.path.exists(FONT_PATH):
+        try:
+            r = requests.get(FONT_URL, timeout=10)
+            if r.status_code == 200:
+                with open(FONT_PATH, "wb") as f:
+                    f.write(r.content)
+        except Exception:
+            pass
+    return os.path.exists(FONT_PATH)
+
+def clean_markdown_text(text):
     if not text:
         return ""
-    text = text.replace("### ", "").replace("**", "")
-    replacements = {
-        "ı": "i", "İ": "I", "ğ": "g", "Ğ": "G",
-        "ü": "u", "Ü": "U", "ş": "s", "Ş": "S",
-        "ö": "o", "Ö": "O", "ç": "c", "Ç": "C",
-        "’": "'", "‘": "'", "“": '"', "”": '"',
-        "—": "-", "–": "-", "•": "-", "…": "..."
-    }
-    for tr, en in replacements.items():
-        text = text.replace(tr, en)
-    return text.encode('latin-1', 'replace').decode('latin-1')
+    # Markdown format işaretlerini temizleme
+    text = text.replace("### ", "").replace("## ", "").replace("# ", "")
+    text = text.replace("**", "").replace("*", "")
+    return text
 
 def create_pdf(report_text, sektor_adi):
+    font_available = ensure_font()
+    
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Başlık Alanı
-    pdf.set_font("Helvetica", "B", 14)
-    pdf.cell(0, 10, safe_pdf_text("AdShield - Reklam Uyumluluk ve Risk Raporu"), ln=True, align="C")
+    if font_available:
+        pdf.add_font("Roboto", "", FONT_PATH)
+        main_font = "Roboto"
+    else:
+        main_font = "Helvetica"
+
+    # Başlık
+    pdf.set_font(main_font, "" if font_available else "B", 14)
+    pdf.cell(0, 10, "AdShield - Reklam Uyumluluk ve Risk Raporu", ln=True, align="C")
     
     # Bilgi Satırı
-    pdf.set_font("Helvetica", "", 10)
-    info_line = f"Sektor: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}"
-    pdf.cell(0, 6, safe_pdf_text(info_line), ln=True, align="C")
+    pdf.set_font(main_font, "", 9)
+    pdf.cell(0, 6, f"Sektör: {sektor_adi} | Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
     pdf.line(10, 28, 200, 28)
     pdf.ln(8)
     
-    # Rapor İçeriği
-    pdf.set_font("Helvetica", "", 10)
-    pdf.multi_cell(0, 6, safe_pdf_text(report_text))
+    # İçerik
+    temiz_metin = clean_markdown_text(report_text)
     
+    if font_available:
+        pdf.set_font(main_font, "", 9.5)
+        pdf.multi_cell(0, 5.5, temiz_metin)
+    else:
+        # Font indirilemezse güvenlik fallback'i
+        tr_map = str.maketrans("ğĞıİöÖüÜşŞçÇ", "gGiIoOuUsScC")
+        pdf.set_font("Helvetica", "", 9.5)
+        pdf.multi_cell(0, 5.5, temiz_metin.translate(tr_map).encode('latin-1', 'replace').decode('latin-1'))
+        
     return bytes(pdf.output())
 
 if "rapor_sonucu" not in st.session_state:
