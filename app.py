@@ -219,34 +219,26 @@ def get_working_model(system_instruction=None):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
-def call_api_with_retry(model, payload, stream=False):
-    """Google 429 Limit Hatası atarsa çökmek yerine 20 saniye bekler ve tekrar dener."""
+# --- İNTERAKTİF ASİSTAN VE DİLEKÇE İÇİN GÜVENLİ OLUŞTURUCU ---
+def generate_content_safe(contents, system_instruction=None):
+    model = get_working_model(system_instruction=system_instruction)
     for attempt in range(3):
         try:
-            if stream:
-                return model.generate_content(payload, stream=True)
-            else:
-                return model.generate_content(payload)
+            response = model.generate_content(contents)
+            if response and response.text:
+                return response.text
+            raise Exception("Model boş yanıt döndürdü.")
         except Exception as e:
             err_str = str(e)
             if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
                 if attempt < 2:
-                    time.sleep(20)
+                    match = re.search(r'retry in (\d+\.?\d*)s', err_str)
+                    wait_time = float(match.group(1)) + 3 if match else 35
+                    time.sleep(wait_time)
                     continue
-            raise e
-    raise Exception("Google API limitleri aşıldı ve tekrar denemeler başarısız oldu.")
+            raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
 
-def generate_content_safe(contents, system_instruction=None):
-    try:
-        model = get_working_model(system_instruction=system_instruction)
-        response = call_api_with_retry(model, contents, stream=False)
-        if response and response.text:
-            return response.text
-        raise Exception("Model boş yanıt döndürdü.")
-    except Exception as e:
-        raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
-
-# --- YENİ: KOTAYI KORUYAN "TEK SORGULU (SINGLE-CALL)" SENTEZ MOTORU ---
+# --- YENİ NESİL: KENDİNİ OTOMATİK İYİLEŞTİREN VE SAHTE AKIŞ (FAKE-STREAM) YAPAN SENTEZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -254,12 +246,10 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
     
-    # Eskiden 3 kez attığımız sorguyu tek bir güçlü metinde (Master Prompt) birleştirdik.
     single_master_prompt = f"""
 {system_instruction_base}
 
 GÖREVİN: Aşağıdaki materyali tek seferde, eşzamanlı olarak hem KATI BİR MEVZUAT BAŞDENETÇİSİ hem de KIDEMLİ BİR HAKSIZ REKABET AVUKATI şapkalarıyla incelemek ve bana doğrudan KUSURSUZ, HARMANLANMIŞ BİR {rapor_turu_adi} üretmektir.
-(Önce kendi içinde ihlalleri bul, sonra cezai risklerini hesapla ve doğrudan formata uygun nihai raporu bas.)
 
 KESİN KURALLAR:
 1. "KİME:", "HAZIRLAYAN:", "KONU:" gibi bürokratik giriş antetlerini ASLA KULLANMA. Doğrudan raporun ana özetine veya ihlal analizine başla.
@@ -268,16 +258,40 @@ KESİN KURALLAR:
 """
     
     payload = [single_master_prompt] + contents
+    model = get_working_model()
     
-    try:
-        model = get_working_model()
-        # Sadece 1 kez API'ye gidiyoruz (Kotadan müthiş tasarruf!)
-        response = call_api_with_retry(model, payload, stream=True)
-        for chunk in response:
-            if chunk.text:
-                yield chunk.text
-    except Exception as e:
-        yield f"Sentezleme sırasında hata oluştu. Limitlerinizi kontrol ediniz. Hata: {e}"
+    for attempt in range(3):
+        try:
+            # DİKKAT: stream=False yapıyoruz. Hata varsa API anında söylesin diye.
+            response = model.generate_content(payload, stream=False)
+            
+            if response and response.text:
+                # Kendi Fake-Stream (Yapay Akış) motorumuz
+                words = response.text.split(' ')
+                for i in range(0, len(words), 6):
+                    yield ' '.join(words[i:i+6]) + ' '
+                    time.sleep(0.04) # Daktilo efekti hissi
+                return # Analiz bittiğinde döngüden komple çık
+            else:
+                yield "Analiz başlatılamadı. Model boş yanıt döndürdü."
+                return
+                
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
+                if attempt < 2:
+                    # Google'ın hata mesajından tam süreyi okuyoruz
+                    match = re.search(r'retry in (\d+\.?\d*)s', err_str)
+                    wait_time = float(match.group(1)) + 3 if match else 45
+                    
+                    yield f"\n\n> ⏳ **[Google API Limit Koruması Devrede]** Sistem dakikalık kotaları korumak adına duraklatıldı. Analiz iptal edilmedi, {int(wait_time)} saniye içinde otomatik olarak devam edip ekrana yansıyacaktır. Lütfen sayfayı yenilemeyiniz...\n\n"
+                    
+                    time.sleep(wait_time)
+                    continue # Süre dolduktan sonra try bloğunu tekrar baştan çalıştır
+            
+            # Eğer hata 429 değilse veya 3 deneme de bittiyse gerçek hatayı ver
+            yield f"\nSentezleme sırasında kalıcı bir hata oluştu: {err_str}"
+            return
 
 def download_single_img(url, headers):
     try:
@@ -427,6 +441,7 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
+# --- L'OREAL'İ ENGELLEYEN VE PUANLAYAN EMSAL MOTORU ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi.", []
