@@ -305,7 +305,7 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
-# --- HASSAS DOĞRULAMALI VE ESNEK LİNK MOTORU ---
+# --- HASSAS DOĞRULAMALI LİNK MOTORU ---
 def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=30"
     
@@ -322,19 +322,20 @@ def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
                 snippet = result.get("snippet", "")
                 
                 url_lower = link.lower()
+                title_lower = title.lower()
                 
-                # 1. Yasaklı sistem ve global uzantıları engelle
+                # 1. Yasaklı sistem/global uzantıları ele
                 if any(yd in url_lower for yd in YASAKLI_DIZINLER):
                     continue
                 
-                # 2. Trendyol Doğrulaması (Yalnızca tekil ürünler ve marka ürünleri)
+                # 2. Trendyol Doğrulaması: Linkte -p- olmalı ve marka URL'de veya başlıkta yer almalı
                 if "trendyol.com" in url_lower:
                     if "-p-" not in url_lower:
                         continue
-                    if ana_marka_slug and ana_marka_slug not in url_lower:
+                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower):
                         continue
 
-                # 3. Hepsiburada Doğrulaması (Arama ve kategori sayfalarını ele, ürünleri al)
+                # 3. Hepsiburada Doğrulaması: Arama ve kategori sayfalarını ele
                 if "hepsiburada.com" in url_lower:
                     if any(c in url_lower for c in ["/ara?", "/kategori/", "/kampanyalar/"]):
                         continue
@@ -369,9 +370,8 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     
     cop_filtre = "-inurl:/en/ -inurl:/ar/ -inurl:/de/ -inurl:/giris -inurl:/odn/ -elbise -giyim -pantolon"
     
-    # 7 Kollu Bağımsız ve Net Radar Matrisi
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com/{marka_slug}/ {cop_filtre}',
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{ana_marka}" {cop_filtre}',
         "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com "{ana_marka}" -inurl:/ara -inurl:/kategori -elbise -giyim',
         "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr inurl:/dp/ "{ana_marka}" {cop_filtre}',
         "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain} OR site:*.{temiz_domain}' if temiz_domain else f'"{ana_marka}" (site:.com OR site:.com.tr) (inurl:products OR inurl:urun OR inurl:koleksiyon OR inurl:shop)',
