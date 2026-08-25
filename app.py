@@ -536,8 +536,20 @@ def create_docx(dilekce_text):
     return docx_io.getvalue()
 
 # Session State Değişkenleri
-if "aktif_mod" not in st.session_state:
-    st.session_state.aktif_mod = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
+MODLAR = [
+    "Kurumsal Kampanya Uyum Denetimi (İç Revizyon)",
+    "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)",
+    "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)"
+]
+
+if "hedef_mod" not in st.session_state:
+    st.session_state.hedef_mod = MODLAR[1]
+
+# Güvenli Yönlendirme (Widget oluşturulmadan önce mod güncellenir)
+if "mod_degisimi" in st.session_state and st.session_state.mod_degisimi:
+    st.session_state.hedef_mod = st.session_state.mod_degisimi
+    st.session_state.mod_degisimi = None
+
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
@@ -556,17 +568,17 @@ if "radar_aktarildi_mesaj" not in st.session_state:
 # Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
 
+secili_indeks = MODLAR.index(st.session_state.hedef_mod) if st.session_state.hedef_mod in MODLAR else 1
+
 mod_secimi = st.radio(
     "Denetim Modu",
-    [
-        "Kurumsal Kampanya Uyum Denetimi (İç Revizyon)",
-        "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)",
-        "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)"
-    ],
+    MODLAR,
+    index=secili_indeks,
     horizontal=True,
-    label_visibility="collapsed",
-    key="aktif_mod"
+    label_visibility="collapsed"
 )
+
+st.session_state.hedef_mod = mod_secimi
 
 # MOD 3: 360° RAKİP, PAZARYERİ & ÜRÜN RADARI
 if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)":
@@ -669,7 +681,7 @@ KAPSAM:
             st.session_state.rapor_sonucu = r_data['analiz']
             st.session_state.dilekce_sonucu = None
             st.session_state.rakip_gorunum = "Reklam Kurulu Şikayet Dilekçesi"
-            st.session_state.aktif_mod = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
+            st.session_state.mod_degisimi = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
             st.session_state.radar_aktarildi_mesaj = True
             st.rerun()
 
