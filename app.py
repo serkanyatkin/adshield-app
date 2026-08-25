@@ -268,7 +268,6 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     working_model_name = None
     last_err = None
     
-    # HATA ÇÖZÜMÜ: Listeleri düzleştiriyoruz (Flattening)
     payload_1 = [prompt_p1] + contents
     payload_2 = [prompt_p2] + contents
     
@@ -302,7 +301,12 @@ Aşağıda aynı materyali iki farklı profesyonel bakış açısıyla inceleyen
 --- UZMAN RAPORU 2 (Haksız Rekabet Avukatı Gözüyle) ---
 {analysis_2}
 
-GÖREVİN: Bu iki raporun en güçlü, en vurucu ve hukuki açıdan en doğru tespitlerini harmanlayarak tek, kusursuz, profesyonel ve eksiksiz bir {rapor_turu_adi} üretmektir. Çelişkileri gider ve nihai kurumsal formatı uygula.
+GÖREVİN: Bu iki raporun en güçlü ve hukuki açıdan en doğru tespitlerini harmanlayarak kusursuz bir {rapor_turu_adi} üretmektir.
+
+KESİN KURALLAR:
+1. "KİME:", "HAZIRLAYAN:", "KONU:" gibi bürokratik giriş antetlerini ASLA KULLANMA. Doğrudan raporun ana özetine veya ihlal analizine başla.
+2. Emsal Kararlar bölümünde sürekli olarak "L'Oreal", "La Roche-Posay" gibi aynı ve klasik markaları TEKRAR ETME. Çeşitliliği sağla ve sektöre uygun farklı Reklam Kurulu kararları kurgula/bul.
+3. Raporu okuyan kişiyi yormayacak, şık ve ferah bir Markdown düzeni (kalın başlıklar, düzgün listeler) kullan.
 """
     try:
         model = genai.GenerativeModel(model_name=working_model_name)
@@ -486,47 +490,57 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     secilenler = [k[1] for k in skorlu[:top_k]]
     return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
 
-def clean_markdown_text(text):
-    if not text:
-        return ""
-    text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
-    text = text.replace("–", "-").replace("—", "-").replace("…", "...")
-    text = text.replace("### ", "").replace("## ", "").replace("# ", "")
-    text = text.replace("**", "").replace("*", "")
-    return text
-
+# --- GELİŞMİŞ PDF OLUŞTURUCU (Okunabilir, Estetik ve Temiz) ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
-    font_path = "Roboto-Regular.ttf"
-    font_yuklendi = False
-    if os.path.exists(font_path) and os.path.getsize(font_path) > 10000:
-        try:
-            pdf.add_font("Roboto", "", font_path)
-            font_yuklendi = True
-        except Exception:
-            font_yuklendi = False
-    temiz_metin = clean_markdown_text(report_text)
-    if font_yuklendi:
-        pdf.set_font("Roboto", "", 12)
-        pdf.cell(0, 8, baslik_metni, ln=True, align="C")
-        pdf.set_font("Roboto", "", 8.5)
-        pdf.cell(0, 5, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
-        pdf.line(10, 24, 200, 24)
-        pdf.ln(5)
-        pdf.multi_cell(0, 4.8, temiz_metin)
-    else:
-        tr_map = str.maketrans("ğĞüÜşŞçÇ", "gGuUsScC")
-        baslik_ascii = baslik_metni.replace("İ", "I").replace("ı", "i").translate(tr_map)
-        pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 8, baslik_ascii, ln=True, align="C")
-        pdf.set_font("Helvetica", "", 8.5)
-        pdf.cell(0, 5, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
-        pdf.line(10, 24, 200, 24)
-        pdf.ln(5)
-        ascii_metin = temiz_metin.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-        pdf.multi_cell(0, 4.8, ascii_metin)
+    
+    # Türkçe karakter dönüşümü (Font hatalarını önlemek için)
+    tr_map = str.maketrans("ğĞüÜşŞçÇİı", "gGuUsScCIi")
+    
+    # Rapor Başlığı (Büyük ve Kalın)
+    pdf.set_font("Helvetica", "B", 16)
+    baslik_ascii = baslik_metni.translate(tr_map)
+    pdf.cell(0, 10, baslik_ascii, ln=True, align="C")
+    
+    # Tarih Alt Başlığı
+    pdf.set_font("Helvetica", "I", 10)
+    pdf.set_text_color(100, 100, 100)
+    pdf.cell(0, 6, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
+    pdf.line(10, 28, 200, 28)
+    pdf.ln(8)
+    
+    # Metin Rengi Sıfırlama
+    pdf.set_text_color(0, 0, 0)
+    
+    # Metni Satır Satır İşleme (Başlık ve Gövde Ayrımı)
+    lines = report_text.split('\n')
+    for line in lines:
+        line = line.strip()
+        if not line:
+            pdf.ln(4)
+            continue
+        
+        line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+        
+        # Ana Başlık Tespiti (### veya Roma Rakamlı)
+        if line.startswith("###") or line.startswith("I.") or line.startswith("II.") or line.startswith("III.") or line.startswith("IV.") or line.startswith("V."):
+            pdf.set_font("Helvetica", "B", 12)
+            temiz_baslik = line_ascii.replace("###", "").replace("**", "").strip()
+            pdf.multi_cell(0, 7, temiz_baslik)
+            pdf.ln(2)
+        # Alt Başlık / Vurgulu Madde Tespiti
+        elif line.startswith("* **") or line.startswith("- **"):
+            pdf.set_font("Helvetica", "B", 11)
+            temiz_alt = line_ascii.replace("**", "").replace("* ", "").replace("- ", "").strip()
+            pdf.multi_cell(0, 6, temiz_alt)
+        # Normal Gövde Metni
+        else:
+            pdf.set_font("Helvetica", "", 11)
+            temiz_satir = line_ascii.replace("**", "").replace("*", "").strip()
+            pdf.multi_cell(0, 6, temiz_satir)
+            
     return bytes(pdf.output())
 
 def create_docx(dilekce_text):
@@ -748,6 +762,8 @@ Yüklenen metinleri, başlıkları, ambalaj rozetlerini ve iddiaları doğrudan 
 === EMSAL REKLAM KURULU İÇTİHATLARI ===
 {ilgili_emsaller}
 =======================================
+
+ÖNEMLİ: Emsal kararlarda sürekli olarak "L'Oreal / La Roche-Posay" örneğini verme. Sunduğum metindeki emsal havuzunu kullan veya farklı, çeşitli TİTCK/Reklam Kurulu kararları sun.
 
 İNCELENEN VERİLER:
 Sektör: {sektor} | Mecra: {mecra}
