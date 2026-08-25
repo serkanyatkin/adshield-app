@@ -12,10 +12,9 @@ import glob
 import re
 import requests
 import io
-import json
 import tempfile
 import urllib.parse
-from urllib.parse import urljoin, quote_plus
+from urllib.parse import quote_plus
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
@@ -250,7 +249,6 @@ def search_live_images_for_query(query, limit=4):
     pil_images = []
     
     try:
-        # DDG Görsel Çözücü
         vqd_url = f"https://duckduckgo.com/?q={quote_plus(query + ' trendyol ürün')}&format=json"
         vqd_res = requests.get(vqd_url, headers=headers, timeout=4)
         vqd = None
@@ -270,7 +268,6 @@ def search_live_images_for_query(query, limit=4):
     except Exception:
         pass
 
-    # Yedek HTML Görsel Kazıyıcı
     if not img_urls:
         try:
             url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' ürün afişi görseli')}"
@@ -305,7 +302,6 @@ def fetch_real_marketplace_data(query):
     }
     sellers_dossier = []
     
-    # 1. Trendyol Gateway Arama
     try:
         ty_api_url = f"https://public.trendyol.com/discovery-web-searchgw-service/v2/api/infinite-scroll/sr?q={quote_plus(query)}&pi=1&culture=tr-TR"
         r = requests.get(ty_api_url, headers=headers, timeout=5)
@@ -339,13 +335,11 @@ def fetch_real_marketplace_data(query):
     except Exception:
         pass
 
-    # 2. Canlı Görsel Destekleyici (Eğer görsel eksikse tamamla)
     for idx, item in enumerate(sellers_dossier):
         if not item["pil_images"]:
             _, fallback_pils = search_live_images_for_query(f"{query} satıcı {idx+1}", limit=2)
             item["pil_images"] = fallback_pils
 
-    # 3. Yedek Web Satıcı Taraması (Eğer liste boşsa)
     if not sellers_dossier:
         _, general_images = search_live_images_for_query(query, limit=4)
         sellers_dossier = [
@@ -367,14 +361,41 @@ def fetch_real_marketplace_data(query):
 
     return sellers_dossier
 
-def clean_markdown_text(text):
+# PDF İçin Karakter Temizleme & Transliterasyon Fonksiyonu
+def sanitize_text_for_pdf(text, use_unicode=False):
     if not text:
         return ""
     text = text.replace("’", "'").replace("‘", "'").replace("“", '"').replace("”", '"')
     text = text.replace("–", "-").replace("—", "-").replace("…", "...")
     text = text.replace("### ", "").replace("## ", "").replace("# ", "")
     text = text.replace("**", "").replace("*", "")
+    
+    if not use_unicode:
+        tr_chars = {
+            'ı': 'i', 'İ': 'I', 'ğ': 'g', 'Ğ': 'G',
+            'ş': 's', 'Ş': 'S', 'ç': 'c', 'Ç': 'C',
+            'ö': 'o', 'Ö': 'O', 'ü': 'u', 'Ü': 'U'
+        }
+        for k, v in tr_chars.items():
+            text = text.replace(k, v)
+        text = text.encode('latin-1', 'replace').decode('latin-1')
+        
     return text
+
+# Font Yükleme Kontrolü
+def get_pdf_font():
+    font_path = "Roboto-Regular.ttf"
+    if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
+        try:
+            # Roboto fontunu otomatik indir
+            url = "https://raw.githubusercontent.com/google/fonts/main/apache/roboto/Roboto-Regular.ttf"
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                with open(font_path, "wb") as f:
+                    f.write(r.content)
+        except Exception:
+            pass
+    return os.path.exists(font_path) and os.path.getsize(font_path) > 10000
 
 # Her Satıcı Kartının Altına Görselleri Doğrudan Gömen Gelişmiş PDF Rapor Motoru
 def create_integrated_visual_pdf(report_text, item_dossier, header_title):
@@ -382,39 +403,34 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    font_path = "Roboto-Regular.ttf"
-    font_yuklendi = False
-    if os.path.exists(font_path) and os.path.getsize(font_path) > 10000:
+    font_yuklendi = get_pdf_font()
+    if font_yuklendi:
         try:
-            pdf.add_font("Roboto", "", font_path)
-            font_yuklendi = True
+            pdf.add_font("Roboto", "", "Roboto-Regular.ttf")
         except Exception:
             font_yuklendi = False
 
-    tr_map = str.maketrans("ğĞüÜşŞçÇ", "gGuUsScC")
-    
-    # 1. Başlık
+    # 1. Başlık Alanı
     if font_yuklendi:
         pdf.set_font("Roboto", "", 13)
-        pdf.cell(0, 7, header_title, ln=True, align="C")
+        pdf.cell(0, 7, sanitize_text_for_pdf(header_title, use_unicode=True), ln=True, align="C")
         pdf.set_font("Roboto", "", 8.5)
         pdf.cell(0, 5, f"Denetim Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
     else:
         pdf.set_font("Helvetica", "B", 12)
-        pdf.cell(0, 7, header_title.translate(tr_map), ln=True, align="C")
+        pdf.cell(0, 7, sanitize_text_for_pdf(header_title, use_unicode=False), ln=True, align="C")
         pdf.set_font("Helvetica", "", 8.5)
         pdf.cell(0, 5, f"Denetim Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
         
     pdf.line(10, 24, 200, 24)
     pdf.ln(5)
 
-    # 2. Hukuki Analiz Metni (Sayfa Taşmalı Akış)
-    clean_txt = clean_markdown_text(report_text)
-    if not font_yuklendi:
-        clean_txt = clean_txt.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-        pdf.set_font("Helvetica", "", 8.5)
-    else:
+    # 2. Hukuki Analiz Metni
+    clean_txt = sanitize_text_for_pdf(report_text, use_unicode=font_yuklendi)
+    if font_yuklendi:
         pdf.set_font("Roboto", "", 9)
+    else:
+        pdf.set_font("Helvetica", "", 8.5)
         
     pdf.multi_cell(0, 4.6, clean_txt)
     pdf.ln(6)
@@ -428,6 +444,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
         else:
             pdf.set_font("Helvetica", "B", 10)
             pdf.cell(0, 7, "SOMUT DELIL, SATICI VE GORSEL GALERI DENETIMI", ln=True, align="L")
+            
         pdf.line(10, pdf.get_y(), 200, pdf.get_y())
         pdf.ln(5)
 
@@ -437,19 +454,19 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
                 if pdf.get_y() > 195:
                     pdf.add_page()
                     
-                title_str = f"Satıcı / Kanal {idx}: {item['title'][:70]}"
-                url_str = f"Satış Linki: {item['url'][:85]}"
+                title_str = sanitize_text_for_pdf(f"Satıcı / Kanal {idx}: {item['title'][:70]}", use_unicode=font_yuklendi)
+                url_str = sanitize_text_for_pdf(f"Satış Linki: {item['url'][:85]}", use_unicode=font_yuklendi)
                 
-                if not font_yuklendi:
-                    title_str = title_str.translate(tr_map)
-                    url_str = url_str.translate(tr_map)
-                    pdf.set_font("Helvetica", "B", 9.5)
-                else:
+                if font_yuklendi:
                     pdf.set_font("Roboto", "", 10)
-                    
-                pdf.cell(0, 5, title_str, ln=True)
-                pdf.set_font("Helvetica", "I", 7.5)
-                pdf.cell(0, 4, url_str, ln=True)
+                    pdf.cell(0, 5, title_str, ln=True)
+                    pdf.set_font("Roboto", "", 7.5)
+                    pdf.cell(0, 4, url_str, ln=True)
+                else:
+                    pdf.set_font("Helvetica", "B", 9.5)
+                    pdf.cell(0, 5, title_str, ln=True)
+                    pdf.set_font("Helvetica", "", 7.5)
+                    pdf.cell(0, 4, url_str, ln=True)
                 pdf.ln(2)
                 
                 # Görselleri Yan Yana Bas
