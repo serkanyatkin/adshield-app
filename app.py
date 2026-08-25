@@ -12,10 +12,9 @@ import glob
 import re
 import requests
 import io
-import json
 import tempfile
 import urllib.parse
-from urllib.parse import quote_plus
+from urllib.parse import quote_plus, unquote
 from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
@@ -197,7 +196,7 @@ with st.sidebar:
         serpapi_key = serpapi_input
     
     st.markdown("---")
-    st.caption("ℹ️ **Nasıl Çalışır?**\nSerpApi anahtarı tanımlandığında Google Shopping, Trendyol satıcıları ve Meta kütüphanesi bot engeline takılmadan 10+ kaynakla taranır.")
+    st.caption("ℹ️ **Nasıl Çalışır?**\nSerpApi anahtarı girildiğinde Google Shopping, Trendyol satıcıları ve Meta arşivi bot engeline takılmadan taranır.")
 
 def optimize_image(img, max_dimension=750):
     img = img.convert("RGB")
@@ -239,10 +238,16 @@ def generate_content_safe(contents, system_instruction=None):
             continue
     raise Exception(f"Model yanıtı alınamadı: {last_err}")
 
-def download_single_img(url, headers):
+# CDN Korumasını Aşan Güvenli Görsel İndirici
+def download_single_img(url, default_referer="https://www.trendyol.com/"):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
+        'Referer': default_referer,
+        'Accept': 'image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8'
+    }
     try:
-        res = requests.get(url, headers=headers, timeout=5)
-        if res.status_code == 200 and len(res.content) > 2500:
+        res = requests.get(url, headers=headers, timeout=6)
+        if res.status_code == 200 and len(res.content) > 2000:
             pil_img = Image.open(io.BytesIO(res.content))
             return optimize_image(pil_img)
     except Exception:
@@ -256,24 +261,26 @@ def generate_evidence_card_image(channel_title, query_text):
     draw.rectangle([10, 10, 470, 48], fill="#5D728B")
     draw.text((20, 22), "ADSHIELD OTOMATIK DELIL KAYDI", fill="#FFFFFF")
     draw.text((20, 75), f"Mecra: {channel_title[:45]}", fill="#1E293B")
-    draw.text((20, 110), f"Sorgu: {query_text[:45]}", fill="#0F172A")
+    draw.text((20, 110), f"Urun: {query_text[:45]}", fill="#0F172A")
     draw.text((20, 150), "Pazaryeri Urunu & Ihlal Tespiti", fill="#DC2626")
     draw.text((20, 205), f"Denetim: {datetime.now().strftime('%d.%m.%Y %H:%M')}", fill="#64748B")
     return img
 
-# Çoklu Kanal & Derin Arama Motoru (Option B - SerpApi & Multi-Engine Pipeline)
+# Çoklu Kanal & Derin Arama Motoru
 def execute_deep_multi_channel_search(query, custom_serp_key=None):
+    clean_query = unquote(query).strip()
+    encoded_q = quote_plus(clean_query)
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36',
-        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8'
+        'Accept-Language': 'tr-TR,tr;q=0.9'
     }
     scraped_dossier = []
     
-    # 1. SERPAPI VARSA: Google Shopping + Multi-Site Deep Search
+    # 1. SERPAPI VARSA (Google Shopping + Çoklu Site)
     if custom_serp_key:
-        # A. Google Shopping Arama
         try:
-            shop_url = f"https://serpapi.com/search.json?engine=google_shopping&q={quote_plus(query)}&gl=tr&hl=tr&api_key={custom_serp_key}"
+            shop_url = f"https://serpapi.com/search.json?engine=google_shopping&q={encoded_q}&gl=tr&hl=tr&api_key={custom_serp_key}"
             shop_res = requests.get(shop_url, timeout=8).json()
             if "shopping_results" in shop_res:
                 for item in shop_res["shopping_results"][:5]:
@@ -285,12 +292,12 @@ def execute_deep_multi_channel_search(query, custom_serp_key=None):
                     
                     pil_imgs = []
                     if thumb:
-                        d_img = download_single_img(thumb, headers)
+                        d_img = download_single_img(thumb, default_referer="https://www.google.com/")
                         if d_img:
                             pil_imgs.append(d_img)
                             
                     scraped_dossier.append({
-                        "title": f"Google Alışveriş / Satıcı: {merchant} ({title[:60]})",
+                        "title": f"Google Alışveriş: {merchant} ({title[:60]})",
                         "url": link,
                         "extracted_text": f"Ürün: {title}\nSatıcı: {merchant}\nFiyat: {price}\nAçıklama: {item.get('snippet', '')}",
                         "pil_images": pil_imgs
@@ -298,90 +305,57 @@ def execute_deep_multi_channel_search(query, custom_serp_key=None):
         except Exception:
             pass
 
-        # B. Trendyol & Hepsiburada Spesifik Organic Arama
-        try:
-            org_url = f"https://serpapi.com/search.json?engine=google&q={quote_plus(query + ' site:trendyol.com OR site:hepsiburada.com OR site:amazon.com.tr')}&gl=tr&hl=tr&api_key={custom_serp_key}"
-            org_res = requests.get(org_url, timeout=8).json()
-            if "organic_results" in org_res:
-                for item in org_res["organic_results"][:6]:
-                    title = item.get("title", "")
-                    link = item.get("link", "")
-                    snippet = item.get("snippet", "")
-                    thumb = item.get("thumbnail", "")
+    # 2. TRENDYOL DIRECT GATEWAY (Spesifik Ürün Sayfaları ve CDN Resimleri)
+    try:
+        ty_url = f"https://public.trendyol.com/discovery-web-searchgw-service/v2/api/infinite-scroll/sr?q={encoded_q}&pi=1&culture=tr-TR"
+        r = requests.get(ty_url, headers=headers, timeout=6)
+        if r.status_code == 200:
+            data = r.json()
+            products = data.get("result", {}).get("products", [])
+            for p in products[:4]:
+                name = p.get("name", "")
+                brand = p.get("brand", {}).get("name", "")
+                p_url = "https://www.trendyol.com" + p.get("url", "")
+                merchant = p.get("merchantName", brand)
+                price = p.get("price", {}).get("sellingPrice", "")
+                
+                raw_images = p.get("images", [])
+                img_urls = [f"https://cdn.dsmcdn.com{img_path}" if not img_path.startswith("http") else img_path for img_path in raw_images[:3]]
+                
+                pil_imgs = []
+                with ThreadPoolExecutor(max_workers=3) as ex:
+                    res_imgs = ex.map(lambda u: download_single_img(u, default_referer="https://www.trendyol.com/"), img_urls)
+                    for r_img in res_imgs:
+                        if r_img:
+                            pil_imgs.append(r_img)
+                            
+                if not pil_imgs:
+                    pil_imgs.append(generate_evidence_card_image(f"Trendyol ({merchant})", clean_query))
                     
-                    pil_imgs = []
-                    if thumb:
-                        d_img = download_single_img(thumb, headers)
-                        if d_img:
-                            pil_imgs.append(d_img)
-                    if not pil_imgs:
-                        pil_imgs.append(generate_evidence_card_image(title, query))
-                        
-                    if not any(d["url"] == link for d in scraped_dossier):
-                        scraped_dossier.append({
-                            "title": title,
-                            "url": link,
-                            "extracted_text": f"Başlık: {title}\nAçıklama & İddialar: {snippet}",
-                            "pil_images": pil_imgs
-                        })
-        except Exception:
-            pass
+                scraped_dossier.append({
+                    "title": f"Trendyol: {brand} - {name} (Satıcı: {merchant})",
+                    "url": p_url,
+                    "extracted_text": f"Ürün: {name}\nSatıcı: {merchant}\nFiyat: {price} TL\nMecra: Trendyol Pazaryeri",
+                    "pil_images": pil_imgs
+                })
+    except Exception:
+        pass
 
-    # 2. SERPAPI YOKSA: Eş Zamanlı 4 Kanallı Web Kazıma & Direct Gateway
+    # 3. YEDEK ARAMA (Hepsiburada / Amazon / Sosyal Medya)
     if len(scraped_dossier) < 3:
-        # Trendyol Public Gateway
-        try:
-            ty_url = f"https://public.trendyol.com/discovery-web-searchgw-service/v2/api/infinite-scroll/sr?q={quote_plus(query)}&pi=1&culture=tr-TR"
-            r = requests.get(ty_url, headers=headers, timeout=5)
-            if r.status_code == 200:
-                data = r.json()
-                products = data.get("result", {}).get("products", [])
-                for p in products[:4]:
-                    name = p.get("name", "")
-                    brand = p.get("brand", {}).get("name", "")
-                    p_url = "https://www.trendyol.com" + p.get("url", "")
-                    merchant = p.get("merchantName", brand)
-                    price = p.get("price", {}).get("sellingPrice", "")
-                    
-                    raw_images = p.get("images", [])
-                    img_urls = [f"https://cdn.dsmcdn.com{img_path}" if not img_path.startswith("http") else img_path for img_path in raw_images[:3]]
-                    
-                    pil_imgs = []
-                    with ThreadPoolExecutor(max_workers=3) as ex:
-                        res_imgs = ex.map(lambda u: download_single_img(u, headers), img_urls)
-                        for r_img in res_imgs:
-                            if r_img:
-                                pil_imgs.append(r_img)
-                                
-                    if not pil_imgs:
-                        pil_imgs.append(generate_evidence_card_image(f"Trendyol ({merchant})", query))
-                        
-                    scraped_dossier.append({
-                        "title": f"Trendyol: {brand} - {name} (Satıcı: {merchant})",
-                        "url": p_url,
-                        "extracted_text": f"Ürün Adı: {name}\nSatıcı Mağaza: {merchant}\nFiyat: {price} TL",
-                        "pil_images": pil_imgs
-                    })
-        except Exception:
-            pass
-
-        # DuckDuckGo Multi-Site Search Engine
         sub_queries = [
-            f"{query} site:trendyol.com",
-            f"{query} site:hepsiburada.com",
-            f"{query} site:amazon.com.tr",
-            f"{query} instagram reels video"
+            f"{clean_query} site:hepsiburada.com",
+            f"{clean_query} site:amazon.com.tr"
         ]
-        
         for sq in sub_queries:
             try:
                 ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(sq)}"
-                res = requests.get(ddg_url, headers=headers, timeout=4)
+                res = requests.get(ddg_url, headers=headers, timeout=5)
                 if res.status_code == 200:
                     soup = BeautifulSoup(res.text, 'html.parser')
                     for a in soup.find_all('a', class_='result__url')[:2]:
                         href = a.get('href', '')
-                        clean_link = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0]) if 'uddg=' in href else href
+                        clean_link = unquote(href.split('uddg=')[1].split('&')[0]) if 'uddg=' in href else href
                         
                         snippet_tag = a.find_parent('div', class_='result__body')
                         snippet = ""
@@ -395,21 +369,21 @@ def execute_deep_multi_channel_search(query, custom_serp_key=None):
                         if clean_link.startswith("http") and not any(ign in clean_link for ign in ["duckduckgo.com", "yandex", "bing"]):
                             if not any(d["url"] == clean_link for d in scraped_dossier):
                                 scraped_dossier.append({
-                                    "title": title if title else f"Kanal Satış Sayfası ({clean_link[:40]})",
+                                    "title": title if title else f"Satış Kanalı ({clean_link[:45]})",
                                     "url": clean_link,
                                     "extracted_text": f"Başlık: {title}\nİddialar: {snippet}",
-                                    "pil_images": [generate_evidence_card_image(title if title else "Pazaryeri", query)]
+                                    "pil_images": [generate_evidence_card_image(title if title else "Pazaryeri", clean_query)]
                                 })
             except Exception:
                 pass
 
-    # Meta Reklam Kütüphanesi Canlı İzleme Kaydı
-    meta_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={quote_plus(query)}&search_type=keyword_unordered&media_type=all"
+    # 4. Meta Reklam Kütüphanesi Temiz Bağlantısı
+    clean_meta_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={encoded_q}&search_type=keyword_unordered&media_type=all"
     scraped_dossier.append({
-        "title": f"Meta Reklam Kütüphanesi (Instagram & Facebook Aktif Video/Görsel Reklamları)",
-        "url": meta_url,
-        "extracted_text": f"Markaya ait Instagram Reels video reklamları, sponsorlu influencer tanıtımları ve feed afişleri arşivi.",
-        "pil_images": [generate_evidence_card_image("Meta Ad Library", query)]
+        "title": "Meta Reklam Kütüphanesi (Instagram & Facebook Aktif Video/Görsel Reklamları)",
+        "url": clean_meta_url,
+        "extracted_text": f"Markaya ait Instagram Reels video reklamları, sponsorlu influencer tanıtımları ve görsel feed reklam arşivi.",
+        "pil_images": [generate_evidence_card_image("Meta Ad Library (Instagram)", clean_query)]
     })
 
     return scraped_dossier
@@ -505,7 +479,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
                     pdf.add_page()
                     
                 title_str = sanitize_text_for_pdf(f"Kanal / Satıcı {idx}: {item['title'][:70]}", use_unicode=font_yuklendi)
-                url_str = sanitize_text_for_pdf(f"Canlı Link: {item['url'][:85]}", use_unicode=font_yuklendi)
+                url_str = sanitize_text_for_pdf(f"Canlı Link: {item['url'][:95]}", use_unicode=font_yuklendi)
                 
                 if font_yuklendi:
                     pdf.set_font("Roboto", "", 10)
@@ -519,7 +493,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
                     pdf.cell(0, 4, url_str, ln=True)
                 pdf.ln(2)
                 
-                # Görselleri Yan Yana Bas
+                # Görselleri Yan Yana Yerleştir
                 if item.get("pil_images"):
                     start_x = 12
                     y_pos = pdf.get_y()
@@ -532,7 +506,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
                     pdf.set_y(y_pos + 48)
                 else:
                     pdf.set_font("Helvetica", "", 8)
-                    pdf.cell(0, 4, "[Bu kanal icin gorsel delil veritabanina kaydedilmistir]", ln=True)
+                    pdf.cell(0, 4, "[Görsel delil kaydı veritabanına eklenmiştir]", ln=True)
                 pdf.ln(5)
         finally:
             for tmp_name in temp_files:
@@ -594,7 +568,7 @@ if mod_secimi == "🎯 360° Otomatik Çoklu Satıcı & Canlı Pazar Radarı (Se
         elif not radar_urun_adi.strip():
             st.warning("Lütfen taranacak bir marka veya ürün adı giriniz.")
         else:
-            with st.spinner("1/3 Eş zamanlı arama motorları çalıştırılıyor; Trendyol, Hepsiburada, Amazon ve Google Alışveriş satıcıları taranıyor..."):
+            with st.spinner("1/3 Eş zamanlı arama motorları çalıştırılıyor; Trendyol, Hepsiburada ve Google Alışveriş satıcıları taranıyor..."):
                 scraped_sellers_dossier = execute_deep_multi_channel_search(radar_urun_adi.strip(), custom_serp_key=serpapi_key)
                 
                 all_pil_images = []
@@ -615,17 +589,17 @@ TARANAN ÜRÜN / MARKA: "{radar_urun_adi}"
 SEKTÖR: {radar_sektor}
 DENETİM TARİHİ: {datetime.now().strftime('%d.%m.%Y')}
 
-İNTERNETTEN DERİN ARAMA VE PAZARYERİ MOTORUYLA ÇEKİLEN {len(scraped_sellers_dossier)} ADET CANLI KANAL VE GÖRSEL DELİL BİLGİSİ:
+İNTERNETTEN ÇEKİLEN {len(scraped_sellers_dossier)} ADET CANLI KANAL BİLGİSİ:
 {dossier_payload}
 
 GÖREVİN:
-Her bir satıcıyı, pazaryeri mağazasını ve ürün fotoğraflarını TEK TEK, AYRI AYRI DEĞERLENDİREN kapsamlı bir "360° ÇOKLU SATICI VE GÖRSEL RİSK RAPORU" hazırlamaktır.
+Her bir satıcıyı, pazaryeri mağazasını ve ürün sayfasını TEK TEK, AYRI AYRI DEĞERLENDİREN kapsamlı bir "360° ÇOKLU SATICI VE GÖRSEL RİSK RAPORU" hazırlamaktır.
 Sektördeki ve taranan verilerdeki somut ihlalleri (yara/çatlak onarımı, deri altı doku yenileme, medikal haç amblemi, %100 kesinlik vaadi, sahte indirim) doğrudan kanun maddeleriyle gerekçelendir.
 
 RAPOR FORMATI:
 
 ### I. TESPİT EDİLEN TÜM CANLI SATICI VE KANAL LİNKLERİ ENVANTERİ
-(Taranan tüm pazaryeri satıcıları, doğrudan ürün sayfaları ve Meta Reklam Kütüphanesi linklerini URL adresleriyle listele).
+(Taranan tüm pazaryeri satıcıları, doğrudan ürün sayfaları ve Meta Reklam Kütüphanesi linklerini temiz URL adresleriyle listele).
 
 ### II. SATICI, LİNK VE GÖRSEL BAZINDA AYRINTILI RİSK ANALİZİ
 
@@ -637,13 +611,6 @@ RAPOR FORMATI:
 * **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
 #### [SATICI / KANAL 2]: (Platform Adı - Satıcı Başlığı)
-* **İncelenen Satış Linki:** (Doğrudan URL)
-* **Kullanılan Sloganlar & İddialar:**
-* **Görsel Galeri & Ambalaj Rozeti Analizi:**
-* **Mevzuata Aykırılık Tespiti:**
-* **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
-
-#### [SATICI / KANAL 3]: (Platform Adı - Satıcı Başlığı)
 * **İncelenen Satış Linki:** (Doğrudan URL)
 * **Kullanılan Sloganlar & İddialar:**
 * **Görsel Galeri & Ambalaj Rozeti Analizi:**
