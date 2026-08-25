@@ -212,15 +212,35 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# En kararlı üretim modelleri
-FAST_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
+# Otomatik Önbellekli Model Listesi (Sadece ilk açılışta taranır, sıfır gecikme yaratır)
+@st.cache_resource(show_spinner=False)
+def get_active_models(current_api_key):
+    fallback = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
+    if not current_api_key:
+        return fallback
+    try:
+        genai.configure(api_key=current_api_key)
+        available = []
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                m_name = m.name.replace("models/", "")
+                available.append(m_name)
+        if available:
+            flash_models = [m for m in available if "flash" in m]
+            other_models = [m for m in available if "flash" not in m]
+            return flash_models + other_models
+    except Exception:
+        pass
+    return fallback
 
 def generate_stream_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı tanımlanmadı.")
     genai.configure(api_key=api_key)
+    models_to_try = get_active_models(api_key)
     last_err = None
-    for model_name in FAST_MODELS:
+    
+    for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents, stream=True)
@@ -237,8 +257,10 @@ def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     genai.configure(api_key=api_key)
+    models_to_try = get_active_models(api_key)
     last_err = None
-    for model_name in FAST_MODELS:
+    
+    for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents)
