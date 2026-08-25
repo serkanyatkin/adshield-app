@@ -50,7 +50,7 @@ def trigger_scroll(position="top"):
     </script>
     """, height=0, width=0)
 
-# Kurumsal Stiller
+# Kurumsal Tema Stilleri
 st.markdown("""
 <div id="page-top-anchor"></div>
 <style>
@@ -160,15 +160,6 @@ st.markdown("""
         padding-bottom: 5px;
     }
 
-    .seller-card {
-        background: #FFFFFF;
-        border: 1px solid #CBD5E1;
-        border-radius: 6px;
-        padding: 14px;
-        margin-bottom: 14px;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.05);
-    }
-
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
@@ -196,17 +187,12 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 api_key = st.secrets.get("GEMINI_API_KEY", None)
-serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
-
-with st.sidebar:
-    st.header("Sistem & API Ayarları")
-    if not api_key:
+if not api_key:
+    with st.sidebar:
+        st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
-    serpapi_key_input = st.text_input("SerpApi Key (Canlı Çoklu Satıcı Arama için):", type="password", value=serpapi_key or "")
-    if serpapi_key_input:
-        serpapi_key = serpapi_key_input
 
-def optimize_image(img, max_dimension=700):
+def optimize_image(img, max_dimension=750):
     img = img.convert("RGB")
     if max(img.size) > max_dimension:
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
@@ -276,16 +262,19 @@ def download_single_img(url, headers):
     return None
 
 def fetch_page_details(url):
+    if not url or not url.strip().startswith(("http://", "https://")):
+        return "", [], []
+    
     headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
-        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8'
     }
     extracted_text = ""
     image_urls = []
     pil_images = []
     
     try:
-        res = requests.get(url, headers=headers, timeout=5)
+        res = requests.get(url.strip(), headers=headers, timeout=5)
         if res.status_code == 200:
             soup = BeautifulSoup(res.text, 'html.parser')
             
@@ -296,7 +285,7 @@ def fetch_page_details(url):
                     image_urls.append(full_og)
                     
             for img in soup.find_all("img"):
-                src = img.get("src") or img.get("data-src") or img.get("data-original")
+                src = img.get("src") or img.get("data-src") or img.get("data-original") or img.get("data-lazy")
                 if src:
                     full_src = urljoin(url, src)
                     if not any(ext in full_src.lower() for ext in [".svg", "icon", "logo", "pixel", "avatar", "1x1"]):
@@ -321,65 +310,6 @@ def fetch_page_details(url):
         extracted_text = f"[İçerik çekme uyarısı: {e}]"
         
     return extracted_text, image_urls, pil_images
-
-def perform_live_multi_seller_search(query, custom_serp_key=None):
-    results = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
-    
-    if custom_serp_key:
-        try:
-            serp_url = f"https://serpapi.com/search.json?q={quote_plus(query + ' trendyol hepsiburada')}&gl=tr&hl=tr&api_key={custom_serp_key}"
-            res = requests.get(serp_url, timeout=6).json()
-            if "organic_results" in res:
-                for r in res["organic_results"][:6]:
-                    results.append({
-                        "title": r.get("title", ""),
-                        "link": r.get("link", ""),
-                        "snippet": r.get("snippet", "")
-                    })
-                return results
-        except Exception:
-            pass
-
-    try:
-        ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' trendyol hepsiburada amazon')}"
-        res = requests.get(ddg_url, headers=headers, timeout=5)
-        if res.status_code == 200:
-            soup = BeautifulSoup(res.text, 'html.parser')
-            for a in soup.find_all('a', class_='result__url'):
-                href = a.get('href', '')
-                if 'uddg=' in href:
-                    clean_link = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0])
-                else:
-                    clean_link = href
-                    
-                snippet_tag = a.find_parent('div', class_='result__body')
-                snippet = ""
-                title = ""
-                if snippet_tag:
-                    s_elem = snippet_tag.find('a', class_='result__snippet')
-                    t_elem = snippet_tag.find('a', class_='result__a')
-                    snippet = s_elem.text.strip() if s_elem else ""
-                    title = t_elem.text.strip() if t_elem else clean_link
-                    
-                if clean_link.startswith("http") and not any(ign in clean_link for ign in ["duckduckgo.com", "yandex", "bing"]):
-                    if not any(r["link"] == clean_link for r in results):
-                        results.append({"title": title, "link": clean_link, "snippet": snippet})
-                if len(results) >= 5:
-                    break
-    except Exception:
-        pass
-
-    if not results:
-        results = [
-            {"title": f"{query} - Trendyol Yetkili Satıcı & Mağaza Sayfası", "link": f"https://www.trendyol.com/sr?q={quote_plus(query)}", "snippet": "Trendyol ana ürün ve yetkili satıcı sayfası."},
-            {"title": f"{query} - Trendyol Alternatif Pazaryeri Satıcısı", "link": f"https://www.trendyol.com/sr?q={quote_plus(query + ' krem')}", "snippet": "Farklı satıcılar tarafından listelenen varyant."},
-            {"title": f"{query} - Hepsiburada Satıcı Listesi", "link": f"https://www.hepsiburada.com/ara?q={quote_plus(query)}", "snippet": "Hepsiburada çoklu satıcı ve ürün sayfası."},
-            {"title": f"{query} - Meta / Instagram Reklam Kütüphanesi", "link": f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={quote_plus(query)}&search_type=keyword_unordered&media_type=all", "snippet": "Instagram aktif video ve görsel reklam arşivi."},
-            {"title": f"{query} - Amazon Türkiye & Web Satış Sayfası", "link": f"https://www.amazon.com.tr/s?k={quote_plus(query)}", "snippet": "Amazon TR ve doğrudan satış platformu."}
-        ]
-        
-    return results
 
 @st.cache_data
 def load_and_index_kararlar():
@@ -429,8 +359,43 @@ def clean_markdown_text(text):
     text = text.replace("**", "").replace("*", "")
     return text
 
-# Görselleri ve Linkleri Doğrudan İçine Gömen Zengin PDF Rapor Motoru
-def create_rich_visual_pdf(report_text, item_dossier, header_title):
+def create_pdf(report_text, baslik_metni):
+    pdf = FPDF()
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    font_path = "Roboto-Regular.ttf"
+    font_yuklendi = False
+    if os.path.exists(font_path) and os.path.getsize(font_path) > 10000:
+        try:
+            pdf.add_font("Roboto", "", font_path)
+            font_yuklendi = True
+        except Exception:
+            font_yuklendi = False
+
+    temiz_metin = clean_markdown_text(report_text)
+    if font_yuklendi:
+        pdf.set_font("Roboto", "", 12)
+        pdf.cell(0, 8, baslik_metni, ln=True, align="C")
+        pdf.set_font("Roboto", "", 8.5)
+        pdf.cell(0, 5, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
+        pdf.line(10, 24, 200, 24)
+        pdf.ln(5)
+        pdf.multi_cell(0, 4.8, temiz_metin)
+    else:
+        tr_map = str.maketrans("ğĞüÜşŞçÇ", "gGuUsScC")
+        baslik_ascii = baslik_metni.replace("İ", "I").replace("ı", "i").translate(tr_map)
+        pdf.set_font("Helvetica", "B", 12)
+        pdf.cell(0, 8, baslik_ascii, ln=True, align="C")
+        pdf.set_font("Helvetica", "", 8.5)
+        pdf.cell(0, 5, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
+        pdf.line(10, 24, 200, 24)
+        pdf.ln(5)
+        ascii_metin = temiz_metin.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
+        pdf.multi_cell(0, 4.8, ascii_metin)
+    return bytes(pdf.output())
+
+# Zengin Görsel Gömülü PDF Rapor Motoru
+def create_integrated_visual_pdf(report_text, item_dossier, header_title):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
@@ -446,7 +411,7 @@ def create_rich_visual_pdf(report_text, item_dossier, header_title):
 
     tr_map = str.maketrans("ğĞüÜşŞçÇ", "gGuUsScC")
     
-    # 1. Sayfa Başlığı
+    # 1. Başlık Alanı
     if font_yuklendi:
         pdf.set_font("Roboto", "", 13)
         pdf.cell(0, 7, header_title, ln=True, align="C")
@@ -459,9 +424,9 @@ def create_rich_visual_pdf(report_text, item_dossier, header_title):
         pdf.cell(0, 5, f"Denetim Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
         
     pdf.line(10, 24, 200, 24)
-    pdf.ln(5)
+    pdf.ln(6)
 
-    # 2. Metin Analizinin Yazılması
+    # 2. Genel Değerlendirme Metni
     clean_txt = clean_markdown_text(report_text)
     if not font_yuklendi:
         clean_txt = clean_txt.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
@@ -470,62 +435,185 @@ def create_rich_visual_pdf(report_text, item_dossier, header_title):
         pdf.set_font("Roboto", "", 9)
         
     pdf.multi_cell(0, 4.6, clean_txt[:2800])
-    pdf.ln(4)
+    pdf.ln(6)
 
-    # 3. Her Bir Satıcı / Link İçin Görsellerin ve Linklerin Gösterilmesi
-    pdf.add_page()
-    if font_yuklendi:
-        pdf.set_font("Roboto", "", 11)
-        pdf.cell(0, 7, "EK-1: TESPİT EDİLEN SATICI, LİNK VE GÖRSEL DELİL GALERİSİ", ln=True, align="L")
-    else:
-        pdf.set_font("Helvetica", "B", 10)
-        pdf.cell(0, 7, "EK-1: TESPIT EDILEN SATICI, LINK VE GORSEL DELIL GALERISI", ln=True, align="L")
-    pdf.line(10, pdf.get_y(), 200, pdf.get_y())
-    pdf.ln(4)
+    # 3. Her Satıcının Altına Doğrudan Görsel Kanıt Kartı Eklenmesi
+    if item_dossier:
+        pdf.add_page()
+        if font_yuklendi:
+            pdf.set_font("Roboto", "", 11)
+            pdf.cell(0, 7, "SOMUT DELİL, SATICI VE GÖRSEL GALERİ DENETİMİ", ln=True, align="L")
+        else:
+            pdf.set_font("Helvetica", "B", 10)
+            pdf.cell(0, 7, "SOMUT DELIL, SATICI VE GORSEL GALERI DENETIMI", ln=True, align="L")
+        pdf.line(10, pdf.get_y(), 200, pdf.get_y())
+        pdf.ln(5)
 
-    temp_files = []
-    try:
-        for idx, item in enumerate(item_dossier, 1):
-            if pdf.get_y() > 220:
-                pdf.add_page()
+        temp_files = []
+        try:
+            for idx, item in enumerate(item_dossier, 1):
+                if pdf.get_y() > 215:
+                    pdf.add_page()
+                    
+                title_str = f"Satıcı / Kaynak {idx}: {item['title'][:65]}"
+                url_str = f"Link: {item['url'][:85]}"
                 
-            title_str = f"Kaynak {idx}: {item['title'][:60]}"
-            url_str = f"URL: {item['url'][:80]}"
-            
-            if not font_yuklendi:
-                title_str = title_str.translate(tr_map)
-                url_str = url_str.translate(tr_map)
-                pdf.set_font("Helvetica", "B", 9)
-            else:
-                pdf.set_font("Roboto", "", 9.5)
+                if not font_yuklendi:
+                    title_str = title_str.translate(tr_map)
+                    url_str = url_str.translate(tr_map)
+                    pdf.set_font("Helvetica", "B", 9)
+                else:
+                    pdf.set_font("Roboto", "", 9.5)
+                    
+                pdf.cell(0, 5, title_str, ln=True)
+                pdf.set_font("Helvetica", "I", 7.5)
+                pdf.cell(0, 4, url_str, ln=True)
+                pdf.ln(2)
                 
-            pdf.cell(0, 5, title_str, ln=True)
-            pdf.set_font("Helvetica", "I", 7.5)
-            pdf.cell(0, 4, url_str, ln=True)
-            pdf.ln(2)
-            
-            # Görselleri Yan Yana Yerleştir
-            if item.get("pil_images"):
-                start_x = 12
-                y_pos = pdf.get_y()
-                img_width = 42
-                for p_idx, p_img in enumerate(item["pil_images"][:3]):
-                    with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
-                        p_img.convert("RGB").save(tmp.name, "JPEG")
-                        temp_files.append(tmp.name)
-                        pdf.image(tmp.name, x=start_x + (p_idx * 46), y=y_pos, w=img_width)
-                pdf.set_y(y_pos + 46)
-            pdf.ln(3)
-    finally:
-        for tmp_name in temp_files:
-            if os.path.exists(tmp_name):
-                try:
-                    os.remove(tmp_name)
-                except Exception:
-                    pass
+                if item.get("pil_images"):
+                    start_x = 12
+                    y_pos = pdf.get_y()
+                    img_width = 44
+                    for p_idx, p_img in enumerate(item["pil_images"][:3]):
+                        with tempfile.NamedTemporaryFile(suffix=".jpg", delete=False) as tmp:
+                            p_img.convert("RGB").save(tmp.name, "JPEG")
+                            temp_files.append(tmp.name)
+                            pdf.image(tmp.name, x=start_x + (p_idx * 48), y=y_pos, w=img_width)
+                    pdf.set_y(y_pos + 48)
+                pdf.ln(4)
+        finally:
+            for tmp_name in temp_files:
+                if os.path.exists(tmp_name):
+                    try:
+                        os.remove(tmp_name)
+                    except Exception:
+                        pass
 
     return bytes(pdf.output())
 
+# Resmi Word (.docx) Formatı Üreticisi
+def create_docx(dilekce_text):
+    doc = docx.Document()
+    for section in doc.sections:
+        section.top_margin = Inches(1)
+        section.bottom_margin = Inches(1)
+        section.left_margin = Inches(1)
+        section.right_margin = Inches(1)
+        
+    style = doc.styles['Normal']
+    font = style.font
+    font.name = 'Calibri'
+    font.size = Pt(11)
+    font.color.rgb = RGBColor(0x00, 0x00, 0x00)
+    
+    cleaned = dilekce_text.replace("---", "").replace("###", "").replace("##", "").replace("#", "")
+    cleaned = re.sub(r'(?i)\bmüstakilen\b\s*', '', cleaned)
+    
+    lines = cleaned.split("\n")
+    in_signature = False
+    
+    for line in lines:
+        line_str = line.strip()
+        if not line_str:
+            continue
+        raw_line = line_str.replace("**", "").replace("*", "").strip()
+        
+        if any(h in raw_line.upper() for h in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(2)
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            r.font.size = Pt(11.5)
+            continue
+            
+        if any(sig_start in raw_line for sig_start in ["ŞİKAYET EDEN MÜVEKKİL", "ŞİKAYET EDEN VEKİLİ", "ŞİKAYET EDEN MÜVEKKİL VEKİLİ"]):
+            in_signature = True
+            
+        if in_signature:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = 1.0
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            continue
+
+        if any(raw_line.startswith(k) for k in [
+            "ŞİKAYET EDEN:", "ŞİKAYET EDEN :", "ADRES:", "ADRES :", 
+            "VEKİLİ:", "VEKİLİ / İLETİŞİM:", "VEKİLİ :",
+            "ŞİKAYET EDİLEN:", "ŞİKAYET EDİLEN :", "İNCELEME LİNKİ:", "İNCELEME LİNKİ :", 
+            "ŞİKAYET KONUSU:", "ŞİKAYET KONUSU :", "KONU:", "KONU :"
+        ]):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(1)
+            p.paragraph_format.space_after = Pt(3)
+            p.paragraph_format.line_spacing = 1.15
+            if ":" in raw_line:
+                parts = raw_line.split(":", 1)
+                r1 = p.add_run(parts[0].strip() + "\t: ")
+                r1.bold = True
+                r1.font.name = 'Calibri'
+                r2 = p.add_run(parts[1].strip())
+                r2.font.name = 'Calibri'
+            else:
+                r = p.add_run(raw_line)
+                r.bold = True
+                r.font.name = 'Calibri'
+            continue
+
+        if raw_line in ["AÇIKLAMALAR:", "AÇIKLAMALAR", "SONUÇ VE İSTEM:", "SONUÇ VE İSTEM"]:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(8)
+            p.paragraph_format.space_after = Pt(4)
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            continue
+
+        if re.match(r'^\d+\.\s', raw_line):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(2)
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            continue
+
+        if raw_line.startswith(("- ", "• ")):
+            p = doc.add_paragraph(style='List Bullet')
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(2)
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line[2:].strip())
+            r.font.name = 'Calibri'
+            continue
+
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(3)
+        p.paragraph_format.line_spacing = 1.15
+        r = p.add_run(raw_line)
+        r.font.name = 'Calibri'
+                    
+    docx_io = io.BytesIO()
+    doc.save(docx_io)
+    docx_io.seek(0)
+    return docx_io.getvalue()
+
+# Session State Değişkenleri
 MODLAR = [
     "Kurumsal Kampanya Uyum Denetimi (İç Revizyon)",
     "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)",
@@ -562,122 +650,137 @@ mod_secimi = st.radio(
 
 st.session_state.hedef_mod = mod_secimi
 
-# MOD 3: 360° ÇOKLU SATICI, GÖRSELLİ VE LİNK BAZLI CANLI RADAR
+# MOD 3: 360° CANLI ÇOKLU SATICI, GÖRSELLİ VE LİNK BAZLI RADAR
 if mod_secimi == "🎯 360° Canlı Ürün & Çoklu Satıcı Radarı (Görsel ve Linkli PDF Raporu)":
     st.markdown('<div class="section-heading" lang="tr">🎯 360° Çoklu Satıcı, Görsel Galeri & Link Bazlı Risk Radarı</div>', unsafe_allow_html=True)
-    st.caption("Ürün veya marka adını girin; sistem Trendyol'daki farklı satıcıları, pazaryerlerini ve resmi kanalları tarayıp görselleri doğrudan linkleriyle birlikte raporlasın.")
+    st.caption("Ürün adını girin ve incelemek istediğiniz Trendyol/Hepsiburada satıcı linklerini veya reklam görsellerini ekleyin; sistem her satıcıyı görselleriyle birlikte PDF raporu olarak derlesin.")
     
-    col_rad1, col_rad2 = st.columns([1.8, 1])
+    col_rad1, col_rad2 = st.columns([1.5, 1])
     with col_rad1:
-        radar_sorgusu = st.text_input("Taranacak Marka veya Ürün Adı", placeholder="Örn: Mamaaura Çatlak ve Selülit Yağı...")
+        radar_urun_adi = st.text_input("Taranan Marka ve Ürün Adı", placeholder="Örn: Mamaaura Çatlak ve Selülit Yağı Shape Me Oil...")
+        radar_linkler_text = st.text_area(
+            "İncelenecek Satıcı Linkleri (Her satıra bir link)", 
+            height=90, 
+            placeholder="https://www.trendyol.com/... (Satıcı 1)\nhttps://www.trendyol.com/... (Satıcı 2)\nhttps://www.hepsiburada.com/... (Satıcı 3)"
+        )
     with col_rad2:
-        radar_sektor = st.selectbox("Sektör", [
+        radar_sektor = st.selectbox("Faaliyet Sektörü", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
             "Takviye Edici Gıda & Sağlık",
             "E-Ticaret & İndirim Kampanyaları",
             "Sosyal Medya & Influencer Reklamları",
             "Diğer"
         ])
-        
-    if st.button("🚀 Çoklu Satıcıları ve Görselleri Tara (PDF Raporu Oluştur)", type="primary"):
+        radar_yuklenen_gorseller = st.file_uploader(
+            "Satıcı/Reklam Ekran Görüntüleri ve Afişler (Opsiyonel / Çoklu)", 
+            type=["jpg", "jpeg", "png"], 
+            accept_multiple_files=True
+        )
+
+    if st.button("🚀 Çoklu Satıcıları ve Görselleri Denetle (Görselli PDF Raporu Oluştur)", type="primary"):
         if not api_key:
-            st.error("Lütfen sol menüden geçerli bir Gemini API anahtarı tanımlayınız.")
-        elif not radar_sorgusu.strip():
-            st.warning("Lütfen taranacak bir marka veya ürün adı giriniz.")
+            st.error("Lütfen geçerli bir Gemini API anahtarı tanımlayınız.")
+        elif not radar_urun_adi.strip() and not radar_linkler_text.strip() and not radar_yuklenen_gorseller:
+            st.warning("Lütfen bir ürün adı giriniz, satıcı linki ekleyiniz veya görsel yükleyiniz.")
         else:
-            with st.spinner("1/3 Canlı pazar araması yapılıyor; Trendyol, Hepsiburada ve web satıcıları listeleniyor..."):
-                found_sellers = perform_live_multi_seller_search(radar_sorgusu.strip(), custom_serp_key=serpapi_key)
+            with st.spinner("1/3 Satıcı sayfaları taranıyor; ürün galeri görselleri ve iddialar indiriliyor..."):
+                input_urls = [u.strip() for u in radar_linkler_text.split("\n") if u.strip().startswith("http")]
                 
-            with st.spinner("2/3 Satıcı sayfalarına bağlanılıyor; ürün galeri fotoğrafları ve iddialar indiriliyor..."):
+                # Eğer link verilmediyse otomatik arama bağlantıları oluşturulur
+                if not input_urls and radar_urun_adi.strip():
+                    encoded_q = quote_plus(radar_urun_adi.strip())
+                    input_urls = [
+                        f"https://www.trendyol.com/sr?q={encoded_q}",
+                        f"https://www.hepsiburada.com/ara?q={encoded_q}",
+                        f"https://www.amazon.com.tr/s?k={encoded_q}"
+                    ]
+
                 scraped_sellers_dossier = []
                 all_pil_images = []
-                
-                for item in found_sellers[:5]:
-                    t_url = item["link"]
+
+                # Linklerden veri ve görsel çekme
+                for idx, t_url in enumerate(input_urls[:5], 1):
                     p_text, p_img_urls, p_pils = fetch_page_details(t_url)
                     scraped_sellers_dossier.append({
-                        "title": item["title"],
+                        "title": f"Satıcı Kaynak {idx} ({urllib.parse.urlparse(t_url).netloc})",
                         "url": t_url,
-                        "snippet": item["snippet"],
                         "extracted_text": p_text,
                         "image_urls": p_img_urls,
                         "pil_images": p_pils
                     })
-                    all_pil_images.extend(p_pils[:2])
+                    all_pil_images.extend(p_pils)
 
-            with st.spinner("3/3 Çok modlu denetçi her satıcıyı ve görseli ayrı ayrı inceliyor..."):
+                # Manuel yüklenen görseller varsa ekle
+                if radar_yuklenen_gorseller:
+                    uploaded_pils = [optimize_image(Image.open(f)) for f in radar_yuklenen_gorseller]
+                    all_pil_images.extend(uploaded_pils)
+                    scraped_sellers_dossier.append({
+                        "title": "Kullanıcı Tarafından Yüklenen Görsel Deliller & Ekran Görüntüleri",
+                        "url": "[Manuel Delil Havuzu]",
+                        "extracted_text": "Yüklenen afiş, before/after ve ambalaj görselleri incelenmiştir.",
+                        "image_urls": [],
+                        "pil_images": uploaded_pils
+                    })
+
+            with st.spinner("2/3 Çok modlu yapay zeka başdenetçisi satıcıları ve görsel delilleri inceliyor..."):
                 dossier_payload = ""
                 for idx, sc in enumerate(scraped_sellers_dossier, 1):
-                    dossier_payload += f"\n--- [SATICI / KANAL {idx}: {sc['title']}] ---\n"
+                    dossier_payload += f"\n--- [SATICI / MEVZUAT KANALI {idx}: {sc['title']}] ---\n"
                     dossier_payload += f"URL: {sc['url']}\n"
-                    dossier_payload += f"Açıklama / Metin:\n{sc['extracted_text']}\n"
-                    dossier_payload += f"Görsel Linkleri ({len(sc['image_urls'])} adet):\n" + "\n".join(sc['image_urls'][:4]) + "\n"
+                    dossier_payload += f"Açıklama / Metin Verisi:\n{sc['extracted_text']}\n"
 
                 radar_analysis_prompt = f"""
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE TÜKETİCİ HUKUKU KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
 
-TARANAN ÜRÜN / MARKA: "{radar_sorgusu}"
+TARANAN ÜRÜN / MARKA: "{radar_urun_adi}"
 SEKTÖR: {radar_sektor}
 
-İNTERNETTEN CANLI OLARAK TOPLANAN ÇOKLU SATICI VE GÖRSEL VERİLERİ:
+İNTERNETTEN VE GÖRSEL HAVUZUNDAN ÇEKİLEN SATICI DELİL VERİLERİ:
 {dossier_payload}
 
 GÖREVİN:
-Her bir satıcıyı, pazaryeri mağazasını ve bu sayfalarda tespit edilen galeri görsellerini/videolarını TEK TEK, AYRI AYRI DEĞERLENDİREN çok kapsamlı bir "360° ÇOKLU SATICI VE GÖRSEL RİSK RAPORU" hazırlamaktır.
+Her bir satıcıyı, pazaryeri mağazasını ve yüklenen/çekilen ürün galeri görsellerini TEK TEK, AYRI AYRI DEĞERLENDİREN çok kapsamlı bir "360° ÇOKLU SATICI VE GÖRSEL RİSK RAPORU" hazırlamaktır.
+Asla varsayımsal veya boş 'veri bulunamadı' gibi ifadeler kullanma; sektördeki ve görsellerdeki somut ihlalleri (yara izi onarımı, 10 kat güçlü lipoliz iddiası, medikal amblem, % indirim manipülasyonu) doğrudan gerekçelendir.
 
 RAPOR FORMATI:
 
 ### I. TESPİT EDİLEN TÜM SATICI VE KANAL LİNKLERİ
-(Trendyol satıcıları, Hepsiburada satıcıları, Instagram reklam kütüphanesi ve web linklerini tam URL adresleriyle listele).
+(İncelenen tüm Trendyol, Hepsiburada, Amazon ve web satıcı linklerini listele).
 
 ### II. SATICI, LİNK VE GÖRSEL BAZINDA AYRINTILI RİSK ANALİZİ
 
-#### [SATICI / KANAL 1]: (Platform Adı - Satıcı Mağaza Başlığı)
+#### [SATICI / KANAL 1]: (Platform Adı - Satıcı Başlığı)
 * **İncelenen Satış Linki:** (Doğrudan URL)
-* **Kullanılan Sloganlar & İddialar:** (Metindeki tırnak içi tüm iddialar)
-* **Görsel Galeri & Ambalaj Rozeti Analizi:** (Görsel 1, Görsel 2, Görsel 3 için tespit edilen rozetler, Before/After ve yüzdesel garanti görselleri)
-* **Mevzuata Aykırılık Tespiti:** (Kozmetik/Gıda Mevzuatı, Sağlık Beyanı ihlalleri)
+* **Kullanılan Sloganlar & İddialar:** (Metindeki tırnak içi somut iddialar)
+* **Görsel Galeri & Ambalaj Rozeti Analizi:** (Ambalaj üstündeki medikal semboller, Before/After ve '%...' yok eder vaatleri)
+* **Mevzuata Aykırılık Tespiti:** (5324 sayılı Kozmetik Kanunu m. 2, Sağlık Beyanı Yönetmeliği m. 7)
 * **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
-#### [SATICI / KANAL 2]: (Platform Adı - Satıcı Mağaza Başlığı)
-* **İncelenen Satış Linki:** (Doğrudan URL)
-* **Kullanılan Sloganlar & İddialar:**
-* **Görsel Galeri & Ambalaj Rozeti Analizi:**
-* **Mevzuata Aykırılık Tespiti:**
-* **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
-
-#### [SATICI / KANAL 3]: (Platform Adı - Satıcı Mağaza Başlığı)
+#### [SATICI / KANAL 2]: (Platform Adı - Satıcı Başlığı)
 * **İncelenen Satış Linki:** (Doğrudan URL)
 * **Kullanılan Sloganlar & İddialar:**
 * **Görsel Galeri & Ambalaj Rozeti Analizi:**
 * **Mevzuata Aykırılık Tespiti:**
 * **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
-#### [SATICI / KANAL 4]: (Platform Adı - Satıcı Mağaza Başlığı)
-* **İncelenen Satış Linki:** (Doğrudan URL)
-* **Kullanılan Sloganlar & İddialar:**
-* **Görsel Galeri & Ambalaj Rozeti Analizi:**
-* **Mevzuata Aykırılık Tespiti:**
-* **Satıcı Risk Derecesi:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
-
-### III. SOSYAL MEDYA (INSTAGRAM REELS & TİKTOK) VİDEO VE SÖZLÜ İDDİALAR
-* **Video İçi Konuşulan Beyanlar:** (Lipoliz, leke yok etme, medikal tedavi söylemleri)
-* **Örtülü Reklam Unsurları:** (İşbirliği etiketi eksikliği)
+### III. SOSYAL MEDYA (INSTAGRAM REELS & VİDEO) İDDİA ANALİZİ
+* **Video İçi Sözlü İfadeler:** (Deri altı yağ parçalama, ameliyat izi silme söylemleri)
+* **Hassas Kitle İstismarı:** (Lohusa, emziren anne ve estetik kaygı istismarı)
 
 ### IV. KÜMÜLATİF YAPTIRIM VE CEZA SKALASI (6502 SAYILI KANUN M. 77)
 * **Mecra Bazlı İdari Para Cezası ve Durdurma/Toplatma Riski**
 
 ### V. YASAL ŞERH
-"Bu rapor AdShield tarafından canlı pazar verileri taranarak oluşturulmuş teknik bir ön risk analizi olup, nihai hukuki mütalaa yerine geçmez."
+"Bu rapor AdShield tarafından toplanan delil verileri incelenerek oluşturulmuş teknik bir ön risk analizi olup, nihai hukuki mütalaa yerine geçmez."
 """
                 try:
                     payload_list = [radar_analysis_prompt]
                     if all_pil_images:
-                        payload_list.extend(all_pil_images[:4])
+                        payload_list.extend(all_pil_images[:6])
                         
                     tam_rapor = generate_content_safe(payload_list)
                     st.session_state.radar_canli_rapor = {
-                        "urun": radar_sorgusu,
+                        "urun": radar_urun_adi if radar_urun_adi else "Çoklu Satıcı Denetimi",
                         "sektor": radar_sektor,
                         "rapor": tam_rapor,
                         "dossier": scraped_sellers_dossier
@@ -690,7 +793,7 @@ RAPOR FORMATI:
         st.write("")
         r_info = st.session_state.radar_canli_rapor
         
-        st.markdown(f"**📡 İncelenen Ürün:** `{r_info['urun']}` | **Sektör:** `{r_info['sektor']}`")
+        st.markdown(f"**📡 İncelenen Ürün / Dosya:** `{r_info['urun']}` | **Sektör:** `{r_info['sektor']}`")
         
         # 1. Yazılı Metin Raporu Alanı
         with st.container(height=480):
@@ -709,14 +812,14 @@ RAPOR FORMATI:
                     for p_i, p_img in enumerate(item["pil_images"][:4]):
                         cols[p_i].image(p_img, caption=f"Görsel {p_i+1}", use_container_width=True)
                 else:
-                    st.info("Bu link için görsel bulunamadı veya güvenlik duvarı nedeniyle çekilemedi.")
+                    st.info("Bu satıcı sayfası için görsel bulunamadı veya bağlantı metin tabanlı.")
 
         # 3. Görselli PDF İndirme Butonu
         st.write("")
         col_p1, col_p2 = st.columns([1.6, 1])
         with col_p1:
             try:
-                pdf_bytes = create_rich_visual_pdf(
+                pdf_bytes = create_integrated_visual_pdf(
                     r_info['rapor'], 
                     r_info['dossier'], 
                     f"AdShield 360 Coklu Satici Risk Raporu - {r_info['urun']}"
@@ -731,7 +834,7 @@ RAPOR FORMATI:
             except Exception as e:
                 st.warning(f"Görselli PDF oluşturma uyarısı: {e}")
         with col_p2:
-            st.caption("PDF raporu; tüm satıcı linklerini, ihlal açıklamalarını ve görsel delil fotoğraflarını içerir.")
+            st.caption("PDF raporu; tüm satıcı linklerini, ihlal maddelerini ve görsel delil fotoğraflarını içerir.")
 
 # MOD 1 & 2: MANUEL İÇ DENETİM VE PİYASA İNCELEMESİ
 else:
@@ -894,8 +997,204 @@ RAPOR FORMATI:
                 if is_danisan:
                     with st.container(height=450):
                         st.markdown(st.session_state.rapor_sonucu)
+                    
+                    try:
+                        pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Reklam Uyum ve Risk Raporu")
+                        st.download_button(
+                            label="Hukuki Uyum ve Revizyon Raporunu İndir (PDF)",
+                            data=pdf_verisi,
+                            file_name=f"AdShield_Uyum_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                            mime="application/pdf",
+                            type="secondary"
+                        )
+                    except Exception as e:
+                        st.warning(f"PDF uyarısı: {e}")
                 else:
-                    with st.container(height=450):
-                        st.markdown(st.session_state.rapor_sonucu)
+                    secili_gorunum = st.radio(
+                        "Görünüm Seçiniz",
+                        ["Haksız Rekabet ve İhlal Raporu", "Reklam Kurulu Şikayet Dilekçesi"],
+                        horizontal=True,
+                        label_visibility="collapsed",
+                        key="rakip_gorunum"
+                    )
+
+                    if secili_gorunum == "Haksız Rekabet ve İhlal Raporu":
+                        with st.container(height=450):
+                            st.markdown(st.session_state.rapor_sonucu)
+                        try:
+                            pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Rakip Reklam İhlal Raporu")
+                            st.download_button(
+                                label="Rakip İhlal Raporunu İndir (PDF)",
+                                data=pdf_verisi,
+                                file_name=f"AdShield_Rakip_Ihlal_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                                mime="application/pdf",
+                                type="secondary"
+                            )
+                        except Exception as e:
+                            st.warning(f"PDF uyarısı: {e}")
+
+                    else:
+                        st.caption("İncelenen rakip tanıtım hakkında resmi Reklam Kurulu Şikayet Dilekçesi paneli.")
+                        
+                        with st.expander("⚖️ Dilekçe Taraf Bilgilerini Düzenle", expanded=True):
+                            c_taraf1, c_taraf2 = st.columns(2)
+                            with c_taraf1:
+                                sikayet_eden_unvan = st.text_input("Şikayet Eden (Müvekkil) Unvanı / Vergi No / MERSİS No", value="", placeholder="Örn: ABC İlaç Kozmetik Paz. A.Ş. MERSİS: 0123456789")
+                                sikayet_eden_adres = st.text_area("Şikayet Eden Adresi", height=65, placeholder="Cadde, Mahalle, No, İlçe / İl")
+                                vekil_bilgisi = st.text_input("Vekil & İletişim Bilgisi", placeholder="Örn: Av. [Ad Soyad] - İletişim: 05XX XXX XX XX")
+                            with c_taraf2:
+                                sikayet_edilen_unvan = st.text_input("Şikayet Edilen Rakip Unvan / Vergi No / MERSİS No", value="", placeholder="Örn: 1. XYZ Kozmetik A.Ş. VKN: 987654321 / 2. Satıcı Şahıs...")
+                                sikayet_edilen_adres = st.text_area("Şikayet Edilen Adresi / Platform Bilgisi", height=65, placeholder="Şirket Adresi veya E-Ticaret Pazaryeri Mağaza Bilgisi")
+
+                        if not st.session_state.dilekce_sonucu:
+                            if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla (Word)", type="primary"):
+                                with st.spinner("Kurumsal Reklam Kurulu şikayet dilekçesi hazırlanıyor..."):
+                                    try:
+                                        s_eden = sikayet_eden_unvan.strip() if sikayet_eden_unvan.strip() else "[Şikayet Eden Şirket / Müvekkil Unvanı / MERSİS / VKN]"
+                                        s_eden_adr = sikayet_eden_adres.strip() if sikayet_eden_adres.strip() else "[Şikayet Eden Şirket Adresi]"
+                                        s_vekil = vekil_bilgisi.strip() if vekil_bilgisi.strip() else "Av. [Vekil Adı Soyadı] - İletişim: [Telefon / E-posta]"
+                                        s_edilen = sikayet_edilen_unvan.strip() if sikayet_edilen_unvan.strip() else "[Şikayet Edilen Firma Unvanı / Satıcı Bilgisi / VKN]"
+                                        s_edilen_adr = sikayet_edilen_adres.strip() if sikayet_edilen_adres.strip() else "[Şikayet Edilen Adres / Platform Bilgisi]"
+                                        s_link = reklam_url.strip() if reklam_url.strip() else "[İncelenen Satış Sayfası / Tanıtım URL]"
+
+                                        dilekce_prompt = f"""
+Sen tüketici hukuku, haksız rekabet ve Reklam Kurulu regülasyonlarında son derece tecrübeli kıdemli bir Hukuk Müşavirisin.
+Aşağıda incelenen rakip tanıtımına ilişkin teknik ihlal raporu ve girilen taraf bilgileri yer almaktadır:
+
+TEKNİK İHLAL RAPORU:
+{st.session_state.rapor_sonucu}
+
+TARAF BİLGİLERİ:
+ŞİKAYET EDEN: {s_eden}
+ADRES: {s_eden_adr}
+VEKİLİ / İLETİŞİM: {s_vekil}
+ŞİKAYET EDİLEN: {s_edilen}
+ADRES: {s_edilen_adr}
+İNCELEME LİNKİ: {s_link}
+
+GÖREVİN:
+Aşağıdaki kurallara KESİNLİKLE uyarak resmi bir REKLAM KURULU ŞİKAYET DİLEKÇESİ hazırlamaktır.
+
+ÖNEMLİ BİÇİM VE İÇERİK KURALLARI:
+1. METİNDE ASLA markdown karakterleri (*, #, ---) KULLANMA. Düz metin olarak çıktı ver.
+2. DİLEKÇE GÖVDESİNDE ASLA EMSAL KARARLARA YER VERME.
+3. METİNDE ASLA "müstakilen" KELİMESİNİ KULLANMA.
+4. "AÇIKLAMALAR" altındaki 1, 2, 3, 4, 5 gibi tüm madde başlıkları TAM VE ANLAMLI BİRER HUKUKİ CÜMLE olsun.
+5. Taraf bilgilerinin yanına fazladan "(Sicil No: ...)" gibi ifadeler EKLEME.
+
+DİLEKÇE YAPISI:
+
+T.C. TİCARET BAKANLIĞI
+REKLAM KURULU BAŞKANLIĞINA
+ANKARA
+
+ŞİKAYET EDEN: {s_eden}
+ADRES: {s_eden_adr}
+VEKİLİ / İLETİŞİM: {s_vekil}
+ŞİKAYET EDİLEN: {s_edilen}
+ADRES: {s_edilen_adr}
+İNCELEME LİNKİ: {s_link}
+ŞİKAYET KONUSU: {s_link} adresinde ve ilgili mecralarda satışa sunulan ürünün tanıtımlarında yer alan mevzuata aykırı sağlık beyanları, fizyolojik etki iddiaları, aldatıcı karşılaştırma, geçersiz dipnot, yanıltıcı indirim ve kesinlik vaatleri suretiyle 6502 sayılı Kanun ve Ticari Reklam Yönetmeliği'nin ihlal edilmesi nedeniyle ilgililer hakkında REKLAMLARIN TEDBİREN DURDURULMASI ve İDARİ PARA CEZASI UYGULANMASI talebidir.
+
+AÇIKLAMALAR:
+(Giriş paragrafı: Şikayet edilen tarafın tanıtım yaptığı mecra, ürün adı ve genel aldatıcı çerçeve).
+
+1. Somut Olarak Tespit Edilen Mevzuata Aykırı Reklam ve Tanıtım İfadeleri:
+(Tanıtımda yer alan tüm tırnak içi yasaklı ifadeleri, sloganları, oranları madde madde sırala).
+
+2. [Kozmetik/Gıda Mevzuatını Aşan ve İlaç Algısı Oluşturan Yasaklı Sağlık Beyanlarına İlişkin Tam Cümle Başlık]:
+(5324 sayılı Kanun, Kozmetik Yönetmeliği m. 4 ve Sağlık Beyanı Yönetmeliği m. 7 çerçevesinde gerekçelendir).
+
+3. [Metabolik ve Biyokimyasal Düzeyde Fizyolojik Etki İddialarının Mevzuata Aykırılığına İlişkin Tam Cümle Başlık]:
+(TİTCK Kılavuzları ve ilgili düzenlemeler uyarınca biyokimyasal mekanizma iddialarının yasaklığını açıkla).
+
+4. [Hammadde İddiasının Bitmiş Ürüne Teşmili, Karşılaştırmalı Reklam ve Geçersiz Dipnot Kullanımına İlişkin Tam Cümle Başlık]:
+(Ticari Reklam Yönetmeliği m. 7/5 ve m. 8 uyarınca ana vaadi çürüten dipnot yasağını ve ispat yükünü izah et).
+
+5. [Kesinlik Bildiren Vaatler, Tüketicinin İstismarı ve Aldatıcı Fiyatlandırma Uygulamalarına İlişkin Tam Cümle Başlık]:
+(Kesinlik vaatleri ve yapay stok/süre/indirim manipülasyonlarını gerekçelendir).
+
+SONUÇ VE İSTEM:
+Yukarıda arz ve izah edilen nedenlerle; şikayet edilen tarafın 6502 sayılı Kanun ve ilgili mevzuata aykırı tanıtımları hakkında gerekli incelemelerin yapılarak;
+1. Anılan hukuka aykırı reklamların 6502 sayılı Kanun'un 63 ve 77. maddeleri gereğince TEDBİREN DURDURULMASINA,
+2. Reklam Veren ve ilgililer hakkında 6502 sayılı Kanun'un 77. maddesi uyarınca İDARİ PARA CEZASI UYGULANMASINA karar verilmesini saygıyla talep ederiz.
+
+ŞİKAYET EDEN MÜVEKKİL VEKİLİ
+{s_vekil}
+"""
+                                        st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
+                                        st.rerun()
+                                    except Exception as e:
+                                        st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
+
+                        if st.session_state.dilekce_sonucu:
+                            with st.container(height=400):
+                                st.markdown(st.session_state.dilekce_sonucu)
+                            
+                            col_d1, col_d2 = st.columns([1.5, 1])
+                            with col_d1:
+                                try:
+                                    docx_verisi = create_docx(st.session_state.dilekce_sonucu)
+                                    st.download_button(
+                                        label="📄 Resmi Şikayet Dilekçesini İndir (Word / .docx)",
+                                        data=docx_verisi,
+                                        file_name=f"Reklam_Kurulu_Sikayet_Dilekcesi_{datetime.now().strftime('%Y%m%d_%H%M')}.docx",
+                                        mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+                                        type="primary"
+                                    )
+                                except Exception as e:
+                                    st.warning(f"Word çıktısı oluşturma uyarısı: {e}")
+                            with col_d2:
+                                if st.button("🔄 Dilekçeyi Yeniden Düzenle"):
+                                    st.session_state.dilekce_sonucu = None
+                                    st.rerun()
             else:
                 st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
+
+    # İnteraktif Chatbot Arayüzü
+    if st.session_state.rapor_sonucu:
+        st.write("")
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">💬 AdShield Mevzuat Asistanı</div>', unsafe_allow_html=True)
+            st.caption("Raporlanan riskler hakkında detay sorabilir veya aşağıdaki hızlı butonları kullanabilirsiniz:")
+
+            c1, c2, c3 = st.columns(3)
+            hizli_soru = None
+            if c1.button("📌 Revize sloganı Instagram'a uyarla"):
+                hizli_soru = "Önerdiğin güvenli reklam metnini Instagram post ve story açıklaması formatına uyarla."
+            if c2.button("📝 Zorunlu dipnot metnini hazırla"):
+                hizli_soru = "Bu reklamda görselin altına veya ambalaj üstüne eklenmesi gereken zorunlu yasal dipnot metnini yaz."
+            if c3.button("🛡️ İspat yükümlülüğü rehberi çıkar"):
+                hizli_soru = "Reklam Kurulu denetiminde bu iddialar için hazır bulundurulması gereken teknik/klinik test belgeleri nelerdir?"
+
+            chat_container = st.container(height=340)
+            with chat_container:
+                if not st.session_state.chat_history:
+                    st.info("Henüz bir soru sormadınız. Aşağıdan yazabilir veya yukarıdaki butonlara tıklayabilirsiniz.")
+                
+                for msg in st.session_state.chat_history:
+                    with st.chat_message(msg["role"]):
+                        st.markdown(msg["content"])
+
+            kullanici_sorusu = st.chat_input("Raporla ilgili bir soru yazın...") or hizli_soru
+
+            if kullanici_sorusu:
+                st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
+                with chat_container:
+                    with st.chat_message("user"):
+                        st.markdown(kullanici_sorusu)
+
+                    with st.chat_message("assistant"):
+                        with st.spinner("Değerlendiriliyor..."):
+                            try:
+                                chat_instruction = f"""
+Sen kurumsal reklam hukuku uzmanısın. Kullanıcının sorularını aşağıdaki rapora göre doğrudan ve profesyonel bir dille yanıtla:
+{st.session_state.rapor_sonucu}
+"""
+                                sohbet_gecmisi_prompt = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in st.session_state.chat_history])
+                                cevap_metni = generate_content_safe(sohbet_gecmisi_prompt, system_instruction=chat_instruction)
+                                st.markdown(cevap_metni)
+                                st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
+                            except Exception as e:
+                                st.error(f"Hata: {e}")
+                st.rerun()
