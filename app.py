@@ -490,16 +490,16 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     secilenler = [k[1] for k in skorlu[:top_k]]
     return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
 
-# --- GELİŞMİŞ PDF OLUŞTURUCU (Okunabilir, Estetik ve Temiz) ---
+# --- GÜÇLENDİRİLMİŞ PDF OLUŞTURUCU (Hatasız ve Estetik) ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
     pdf.add_page()
     
-    # Türkçe karakter dönüşümü (Font hatalarını önlemek için)
+    # Türkçe karakter dönüşüm haritası
     tr_map = str.maketrans("ğĞüÜşŞçÇİı", "gGuUsScCIi")
     
-    # Rapor Başlığı (Büyük ve Kalın)
+    # Rapor Başlığı (Estetik)
     pdf.set_font("Helvetica", "B", 16)
     baslik_ascii = baslik_metni.translate(tr_map)
     pdf.cell(0, 10, baslik_ascii, ln=True, align="C")
@@ -511,10 +511,20 @@ def create_pdf(report_text, baslik_metni):
     pdf.line(10, 28, 200, 28)
     pdf.ln(8)
     
-    # Metin Rengi Sıfırlama
     pdf.set_text_color(0, 0, 0)
     
-    # Metni Satır Satır İşleme (Başlık ve Gövde Ayrımı)
+    # FPDF Çökmesini Önleyen URL/Uzun Kelime Kalkanı
+    def safe_text_for_pdf(txt):
+        words = txt.split()
+        safe_words = []
+        for w in words:
+            if len(w) > 85: # 85 karakterden uzun yapışık kelimeleri boşlukla böl
+                safe_words.append(" ".join([w[i:i+85] for i in range(0, len(w), 85)]))
+            else:
+                safe_words.append(w)
+        return " ".join(safe_words)
+
+    # Rapor Metninin Satır Satır İşlenmesi
     lines = report_text.split('\n')
     for line in lines:
         line = line.strip()
@@ -522,23 +532,27 @@ def create_pdf(report_text, baslik_metni):
             pdf.ln(4)
             continue
         
+        # Karakter temizliği ve güvenli uzunluk kalkanı
         line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-        
-        # Ana Başlık Tespiti (### veya Roma Rakamlı)
+        line_safe = safe_text_for_pdf(line_ascii)
+
+        # 1. Seviye Ana Başlıklar (Örn: ### I. GİRİŞ)
         if line.startswith("###") or line.startswith("I.") or line.startswith("II.") or line.startswith("III.") or line.startswith("IV.") or line.startswith("V."):
             pdf.set_font("Helvetica", "B", 12)
-            temiz_baslik = line_ascii.replace("###", "").replace("**", "").strip()
+            temiz_baslik = line_safe.replace("###", "").replace("**", "").strip()
             pdf.multi_cell(0, 7, temiz_baslik)
             pdf.ln(2)
-        # Alt Başlık / Vurgulu Madde Tespiti
+            
+        # 2. Seviye Vurgulu Alt Başlıklar / Maddeler (Örn: * **Mevzuat İhlali:**)
         elif line.startswith("* **") or line.startswith("- **"):
             pdf.set_font("Helvetica", "B", 11)
-            temiz_alt = line_ascii.replace("**", "").replace("* ", "").replace("- ", "").strip()
+            temiz_alt = line_safe.replace("**", "").replace("* ", "").replace("- ", "").strip()
             pdf.multi_cell(0, 6, temiz_alt)
-        # Normal Gövde Metni
+            
+        # 3. Seviye Normal Gövde Metni
         else:
             pdf.set_font("Helvetica", "", 11)
-            temiz_satir = line_ascii.replace("**", "").replace("*", "").strip()
+            temiz_satir = line_safe.replace("**", "").replace("*", "").strip()
             pdf.multi_cell(0, 6, temiz_satir)
             
     return bytes(pdf.output())
