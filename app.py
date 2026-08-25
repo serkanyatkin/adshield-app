@@ -307,9 +307,9 @@ def fetch_url_data(url):
 
 # --- HEDEFLİ LİNK VE ÜRÜN DETAY SAYFASI TARAYICISI ---
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
-    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=25"
     try:
-        response = requests.get(url, timeout=5)
+        response = requests.get(url, timeout=6)
         data = response.json()
         link_havuzu = []
         if "organic_results" in data:
@@ -318,8 +318,8 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
                 title = result.get("title", "Başlık Belirtilmemiş")
                 snippet = result.get("snippet", "")
                 
-                # Arama ve kategori sayfalarını ele, doğrudan tekil ürün sayfalarına odaklan
-                if any(x in link for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
+                # Arama ve kategori sayfalarını filtrele
+                if any(x in link.lower() for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
                     continue
                 
                 link_havuzu.append({
@@ -335,13 +335,13 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val:
         return {}
     
-    # Marka kök adını çıkar (örn: "mamaaura" çatlak yağı -> marka="mamaaura")
     marka_kelimesi = urun_adi.split()[0] if urun_adi else "mamaaura"
     
+    # Hatalı inurl:-p- operatörü kaldırıldı, doğrudan platform ürün listelemelerine odaklanıldı
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com inurl:-p- "{marka_kelimesi}"',
-        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com inurl:-p- OR site:hepsiburada.com inurl:-pm- OR site:amazon.com.tr inurl:/dp/) "{marka_kelimesi}"',
-        "🌐 Marka Resmi Web Sitesi Ürünleri": f'(site:{marka_domain} OR site:tr.{marka_domain}) "{marka_kelimesi}"' if marka_domain else f'site:mamaaura.com OR site:tr.mamaaura.com "{marka_kelimesi}"',
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{marka_kelimesi}"',
+        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com "{marka_kelimesi}") OR (site:amazon.com.tr "{marka_kelimesi}")',
+        "🌐 Marka Resmi Web Sitesi Ürünleri": f'site:{marka_domain} "{marka_kelimesi}"' if marka_domain else f'site:mamaaura.com OR site:tr.mamaaura.com',
         "📱 Instagram Gönderi & Reels İçerikleri": f'site:instagram.com/p/ OR site:instagram.com/reel/ "{marka_kelimesi}"'
     }
     
@@ -350,7 +350,6 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
-            # Tekilleştirme
             gorulenler = set()
             tekil_list = []
             for item in sonuclar:
@@ -937,7 +936,7 @@ else:
             radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: mamaaura çatlak yağı...")
             radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: mamaaura.com")
             
-            st.caption("ℹ️ Bu radar; doğrudan tekil ürün satış sayfalarını (`-p-`, `/dp/`, `/reel/`) tarayarak hedef URL havuzunu çıkarır.")
+            st.caption("ℹ️ Bu radar; doğrudan tekil ürün satış sayfalarını tarayarak hedef URL havuzunu çıkarır.")
             radar_tara_butonu = st.button("🚀 Tekil Ürün Linklerini Tespit Et", type="primary")
 
     with sag_kolon:
@@ -959,7 +958,6 @@ else:
                 toplam_link = sum(len(v) for v in st.session_state.radar_link_sonuclari.values())
                 st.success(f"🎯 Toplam **{toplam_link}** adet tekil ürün/satış bağlantısı tespit edildi.")
                 
-                # Sekmeler halinde ürün linklerini göster
                 alt_sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
                 for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
                     with alt_sekmeler[i]:
