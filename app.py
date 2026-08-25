@@ -305,8 +305,8 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
-# --- DOĞAL VE HASSAS DOĞRULAMALI LİNK MOTORU ---
-def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
+# --- KALICI VE KAPSAYICI LİNK MOTORU ---
+def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=40"
     
     YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sepetim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
@@ -316,19 +316,19 @@ def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
         response = requests.get(url, timeout=7)
         data = response.json()
         link_havuzu = []
-        
         raw_items = []
-        # 1. Standart Arama Sonuçları
+        
+        # 1. Standart Google Organik Sonuçları
         if "organic_results" in data:
             raw_items.extend(data["organic_results"])
         
-        # 2. Google Alışveriş ve Ürün Kartları
+        # 2. Google Alışveriş ve Kartlı Sonuçlar (Amazon ve Pazaryerlerini asla kaçırmaz)
         if "shopping_results" in data:
             for s in data["shopping_results"]:
                 raw_items.append({
                     "link": s.get("link") or s.get("product_link", ""),
                     "title": s.get("title", "Alışveriş Ürün Kartı"),
-                    "snippet": f"Fiyat: {s.get('price', '')} - Satıcı: {s.get('source', '')}"
+                    "snippet": f"Fiyat: {s.get('price', '')} - Kaynak: {s.get('source', '')}"
                 })
         
         if "inline_shopping_results" in data:
@@ -350,28 +350,13 @@ def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
             url_lower = link.lower()
             title_lower = title.lower()
             
-            # 1. Genel arama/giriş sayfalarını filtrele
+            # Sistem sayfalarını ele
             if any(yd in url_lower for yd in YASAKLI_DIZINLER):
                 continue
             
-            # 2. Instagram dışındaki kanallarda giyim/tekstil ürünlerini ele
+            # Instagram haricindeki mecralarda giyim/tekstil filtrele
             if "instagram.com" not in url_lower:
                 if any(yg in url_lower or yg in title_lower for yg in YASAKLI_GIYIM):
-                    continue
-
-            # 3. Trendyol Doğrulaması
-            if "trendyol.com" in url_lower:
-                if "-p-" not in url_lower and "/pd/" not in url_lower:
-                    continue
-
-            # 4. Hepsiburada Doğrulaması
-            if "hepsiburada.com" in url_lower:
-                if any(c in url_lower for c in ["/ara?", "/kategori/"]):
-                    continue
-
-            # 5. Amazon Türkiye Doğrulaması
-            if "amazon.com.tr" in url_lower:
-                if "/dp/" not in url_lower and "/gp/product/" not in url_lower:
                     continue
 
             link_havuzu.append({
@@ -392,27 +377,25 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     kelimeler = tam_sorgu.split()
     ana_marka = kelimeler[0]
     
-    marka_slug = ana_marka.lower().replace(" ", "").replace("ı", "i").replace("ş", "s").replace("ç", "c").replace("ö", "o").replace("ü", "u").replace("ğ", "g")
-    
     temiz_domain = ""
     if marka_domain and marka_domain.strip():
         temiz_domain = re.sub(r'^https?://', '', marka_domain.strip()).split('/')[0].replace('www.', '').strip()
     
-    # 8 Kollu Bağımsız ve Temiz Radar Matrisi
+    # 8 Kollu En Geniş ve Güvenilir Arama Matrisi
     queries = {
         "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com {ana_marka}',
         "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com {ana_marka}',
         "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr {ana_marka}',
-        "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain}' if temiz_domain else f'"{ana_marka}" (site:.com OR site:.com.tr)',
+        "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain}' if temiz_domain else f'{ana_marka} (site:.com OR site:.com.tr)',
         "📱 Instagram Reels & Video Akışı": f'site:instagram.com {ana_marka}',
         "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com {ana_marka} (işbirliği OR reklam OR sponsor OR hediye OR "#işbirliği" OR "#reklam")',
-        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com {ana_marka} ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR çatlak OR leke OR bebek)',
+        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com {ana_marka} ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR leke OR çatlak)',
         "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com {ana_marka} (kullananlar OR deneyim OR tavsiye OR yorum OR inceleme)'
     }
     
     kategorize_sonuclar = {}
     with ThreadPoolExecutor(max_workers=8) as executor:
-        futures = [executor.submit(tekil_sorgu_at, kat, q, marka_slug, api_key_val) for kat, q in queries.items()]
+        futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
             gorulenler = set()
@@ -1001,7 +984,7 @@ else:
             radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: incia bebek yağı veya the purest solutions...")
             radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: incia.com.tr")
             
-            st.caption("ℹ️ Bu radar; Trendyol, Hepsiburada, Amazon, resmi site ve Instagram kanallarını temiz dorklarla paralel tarayarak hedef URL havuzunu oluşturur.")
+            st.caption("ℹ️ Bu radar; tüm pazaryerlerini, resmi siteyi ve Instagram kanallarını temiz dorklarla paralel tarayarak hedef URL havuzunu oluşturur.")
             radar_tara_butonu = st.button("🚀 Hedef Linkleri ve İçerikleri Tespit Et", type="primary")
 
     with sag_kolon:
