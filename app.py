@@ -322,32 +322,39 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
+def tekil_sorgu_at(kategori, sorgu, api_key_val):
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=10"
+    try:
+        response = requests.get(url, timeout=5)
+        data = response.json()
+        link_havuzu = []
+        if "organic_results" in data:
+            for result in data["organic_results"]:
+                link_havuzu.append({
+                    "baslik": result.get("title", "Başlık Belirtilmemiş"),
+                    "url": result.get("link", "#"),
+                    "snippet": result.get("snippet", "")
+                })
+        return kategori, link_havuzu
+    except Exception:
+        return kategori, []
+
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val:
         return {}
     queries = {
         "🌐 Resmi Web Sitesi": f'"{urun_adi}" site:{marka_domain}' if marka_domain else f'"{urun_adi}"',
         "🛒 Pazaryerleri (Trendyol & Hepsiburada)": f'"{urun_adi}" site:trendyol.com OR site:hepsiburada.com',
-        "📱 Sosyal Medya (Instagram)": f'"{urun_adi}" site:instagram.com',
-        "⚖️ Tüketici Şikayetleri & Forumlar": f'"{urun_adi}" site:sikayetvar.com'
+        "📱 Sosyal Medya (Instagram)": f'"{urun_adi}" site:instagram.com'
     }
+    
     kategorize_sonuclar = {}
-    for kategori, sorgu in queries.items():
-        url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=10"
-        try:
-            response = requests.get(url, timeout=10)
-            data = response.json()
-            link_havuzu = []
-            if "organic_results" in data:
-                for result in data["organic_results"]:
-                    link_havuzu.append({
-                        "baslik": result.get("title", "Başlık Belirtilmemiş"),
-                        "url": result.get("link", "#"),
-                        "snippet": result.get("snippet", "")
-                    })
-            kategorize_sonuclar[kategori] = link_havuzu
-        except Exception:
-            kategorize_sonuclar[kategori] = []
+    with ThreadPoolExecutor(max_workers=3) as executor:
+        futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
+        for f in futures:
+            kat, sonuclar = f.result()
+            kategorize_sonuclar[kat] = sonuclar
+            
     return kategorize_sonuclar
 
 @st.cache_data
@@ -937,7 +944,7 @@ else:
                 "Diğer"
             ], key="radar_sektor_box")
 
-            st.caption("ℹ️ Bu radar; bot güvenlik duvarlarına takılmadan pazar yerlerini, resmi web sitesini ve sosyal medya kanallarını geniş çaplı tarayarak hedef link havuzunu çıkarır.")
+            st.caption("ℹ️ Bu radar; bot güvenlik duvarlarına takılmadan pazar yerlerini, resmi web sitesini ve Instagram kanallarını eşzamanlı tarayarak hedef link havuzunu çıkarır.")
             radar_tara_butonu = st.button("🚀 Pazar Radarı & Hukuki Analizi Başlat", type="primary")
 
     with sag_kolon:
@@ -951,7 +958,7 @@ else:
                 elif not radar_urun:
                     st.warning("Lütfen taranacak ürün adını giriniz.")
                 else:
-                    with st.spinner("Pazar yerleri ve web kanalları taranıyor..."):
+                    with st.spinner("Pazar yerleri ve web kanalları paralel olarak taranıyor..."):
                         sonuclar = gelismis_coklu_hedef_taramasi(radar_urun, radar_domain, serpapi_key)
                         st.session_state.radar_link_sonuclari = sonuclar
                     
