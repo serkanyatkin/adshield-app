@@ -1,4 +1,5 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import google.generativeai as genai
 from PIL import Image
 from fpdf import FPDF
@@ -16,6 +17,43 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
+
+# Sayfayı Akıllı Kaydırma Fonksiyonları (Otomatik Scroll)
+def scroll_to_bottom():
+    components.html("""
+    <script>
+        setTimeout(() => {
+            try {
+                const doc = window.document;
+                const main = doc.querySelector('section.main') || doc.documentElement || doc.body;
+                main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
+            } catch(e){}
+            try {
+                const pDoc = window.parent.document;
+                const pMain = pDoc.querySelector('section.main') || pDoc.documentElement || pDoc.body;
+                pMain.scrollTo({ top: pMain.scrollHeight, behavior: 'smooth' });
+            } catch(e){}
+        }, 150);
+    </script>
+    """, height=0, width=0)
+
+def scroll_to_top():
+    components.html("""
+    <script>
+        setTimeout(() => {
+            try {
+                const doc = window.document;
+                const main = doc.querySelector('section.main') || doc.documentElement || doc.body;
+                main.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch(e){}
+            try {
+                const pDoc = window.parent.document;
+                const pMain = pDoc.querySelector('section.main') || pDoc.documentElement || pDoc.body;
+                pMain.scrollTo({ top: 0, behavior: 'smooth' });
+            } catch(e){}
+        }, 100);
+    </script>
+    """, height=0, width=0)
 
 # Kurumsal Tema ve Stiller
 st.markdown("""
@@ -174,12 +212,14 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-FAST_MODELS = ["gemini-2.5-flash", "gemini-2.0-flash", "gemini-1.5-flash"]
+# En kararlı üretim modelleri
+FAST_MODELS = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-2.0-flash"]
 
 def generate_stream_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı tanımlanmadı.")
     genai.configure(api_key=api_key)
+    last_err = None
     for model_name in FAST_MODELS:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
@@ -188,23 +228,26 @@ def generate_stream_safe(contents, system_instruction=None):
                 if chunk.text:
                     yield chunk.text
             return
-        except Exception:
+        except Exception as e:
+            last_err = e
             continue
-    raise Exception("Model yanıt veremedi. Lütfen API kotanızı kontrol ediniz.")
+    raise Exception(f"Model akışı sağlanamadı. Detay: {last_err}")
 
 def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     genai.configure(api_key=api_key)
+    last_err = None
     for model_name in FAST_MODELS:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents)
             if response and response.text:
                 return response.text
-        except Exception:
+        except Exception as e:
+            last_err = e
             continue
-    raise Exception("Model yanıtı alınamadı.")
+    raise Exception(f"Model yanıtı alınamadı. Detay: {last_err}")
 
 def download_single_img(url, headers):
     try:
@@ -365,6 +408,8 @@ if "dilekce_sonucu" not in st.session_state:
     st.session_state.dilekce_sonucu = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
+if "last_uploaded_count" not in st.session_state:
+    st.session_state.last_uploaded_count = 0
 
 # Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
@@ -410,13 +455,21 @@ with sol_kolon:
             st.info("Sosyal medya linkleri bot erişimine kapalıdır; görsel ve metin üzerinden inceleme yapılacaktır.")
 
         reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=120, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
+        
         yuklenen_gorseller = st.file_uploader("Reklam Görselleri / Taslaklar (Çoklu Yükleme)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
         
+        # Görsel Yüklendiğinde Otomatik Aşağı Kaydır
         if yuklenen_gorseller:
             gorsel_cols = st.columns(min(len(yuklenen_gorseller), 4))
             for idx, g_dosya in enumerate(yuklenen_gorseller):
                 g_img = Image.open(g_dosya)
                 gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
+            
+            if len(yuklenen_gorseller) != st.session_state.last_uploaded_count:
+                st.session_state.last_uploaded_count = len(yuklenen_gorseller)
+                scroll_to_bottom()
+        else:
+            st.session_state.last_uploaded_count = 0
 
         buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
         analiz_butonu = st.button(buton_etiketi, type="primary")
@@ -427,6 +480,8 @@ with sag_kolon:
         st.markdown(f'<div class="section-heading" lang="tr">{panel_baslik}</div>', unsafe_allow_html=True)
         
         if analiz_butonu:
+            scroll_to_top()
+
             if not api_key:
                 st.error("Lütfen geçerli bir API anahtarı sağlayınız.")
             elif not reklam_metni and not yuklenen_gorseller and not reklam_url:
