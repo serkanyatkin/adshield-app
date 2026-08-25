@@ -4,7 +4,7 @@ import google.generativeai as genai
 import requests
 import streamlit as st
 from reportlab.lib.pagesizes import letter
-from reportlab.pdfgen === canvas  # wait, fix typo: canvas from reportlab.pdfgen import canvas
+from reportlab.pdfgen import canvas
 
 # 1. Sayfa Yapılandırması
 st.set_page_config(
@@ -13,7 +13,7 @@ st.set_page_config(
     layout="wide",
 )
 
-# 2. Güvenli API Anahtar Yönetimi (Sadece API ayarları sol menüde)
+# 2. Güvenli API Anahtar Yönetimi (Sol Menü)
 try:
   GEMINI_API_KEY_DEFAULT = st.secrets.get("GEMINI_API_KEY", "")
   GOOGLE_CSE_KEY_DEFAULT = st.secrets.get("GOOGLE_CSE_KEY", "")
@@ -119,14 +119,13 @@ def generate_pdf(product_name, sector, analysis_result, results):
   return buffer
 
 
-# 4. Ana Ekran - Sayfanın Ortasında Yan Yana Sekmeler (Tabs)
+# 4. Ana Ekran - Sekmeli Arayüz
 st.title("🛡️ AdShield: Reklam Kurulu Risk ve Uyumluluk Analizi")
 st.markdown(
     "Yapay zeka destekli ön denetim, web tarama ve otomatik risk skorlama"
     " aracı."
 )
 
-# Üst kısımda yan yana sekmeler
 tab1, tab2, tab3 = st.tabs([
     "🚀 360° Canlı Risk Tarama",
     "⚖️ Mevzuat & Kılavuz Kontrolü",
