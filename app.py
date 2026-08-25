@@ -209,23 +209,36 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-FAST_MODELS = ["gemini-2.5-flash", "gemini-2.5-pro", "gemini-1.5-flash"]
-
-def generate_content_safe(contents, system_instruction=None):
+# --- OTOMATİK MODEL BULUCU (DİNAMİK KEŞİF) ---
+def get_working_model(system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     genai.configure(api_key=api_key)
-    last_err = None
-    for model_name in FAST_MODELS:
+    
+    # Öncelikli denenecek kararlı model isimleri
+    preferred = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
+    for name in preferred:
         try:
-            model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
-            response = model.generate_content(contents)
-            if response and response.text:
-                return response.text
-        except Exception as e:
-            last_err = e
+            return genai.GenerativeModel(model_name=name, system_instruction=system_instruction)
+        except Exception:
             continue
-    raise Exception(f"Model yanıtı alınamadı. Detay: {last_err}")
+            
+    # Eğer öncelikliler hata verirse API üzerinden desteklenen ilk modeli otomatik seç
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                return genai.GenerativeModel(model_name=m.name, system_instruction=system_instruction)
+    except Exception:
+        pass
+        
+    raise Exception("Kullanılabilir aktif bir Gemini modeli bulunamadı.")
+
+def generate_content_safe(contents, system_instruction=None):
+    model = get_working_model(system_instruction=system_instruction)
+    response = model.generate_content(contents)
+    if response and response.text:
+        return response.text
+    raise Exception("Model yanıtı boş döndü.")
 
 # --- ÇOKLU ROL SENTEZİ (MULTI-ROLE ENSEMBLING) ANALİZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
@@ -239,19 +252,18 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     analysis_1 = ""
     analysis_2 = ""
     
-    for model_name in FAST_MODELS:
-        try:
-            model = genai.GenerativeModel(model_name=model_name)
-            r1 = model.generate_content([prompt_p1, contents])
-            if r1 and r1.text:
-                analysis_1 = r1.text
-            r2 = model.generate_content([prompt_p2, contents])
-            if r2 and r2.text:
-                analysis_2 = r2.text
-            if analysis_1 and analysis_2:
-                break
-        except Exception:
-            continue
+    try:
+        m1 = get_working_model()
+        r1 = m1.generate_content([prompt_p1, contents])
+        if r1 and r1.text:
+            analysis_1 = r1.text
+            
+        m2 = get_working_model()
+        r2 = m2.generate_content([prompt_p2, contents])
+        if r2 and r2.text:
+            analysis_2 = r2.text
+    except Exception:
+        pass
             
     if not analysis_1 and not analysis_2:
         fallback_txt = generate_content_safe(contents, system_instruction_base)
@@ -271,9 +283,8 @@ Aşağıda aynı materyali iki farklı profesyonel bakış açısıyla inceleyen
 
 GÖREVİN: Bu iki raporun en güçlü, en vurucu ve hukuki açıdan en doğru tespitlerini harmanlayarak tek, kusursuz, profesyonel ve eksiksiz bir {rapor_turu_adi} üretmektir. Çelişkileri gider ve nihai kurumsal formatı uygula.
 """
-    model_name = FAST_MODELS[0]
     try:
-        model = genai.GenerativeModel(model_name=model_name)
+        model = get_working_model()
         response = model.generate_content(synthesis_prompt, stream=True)
         for chunk in response:
             if chunk.text:
