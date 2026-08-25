@@ -15,7 +15,7 @@ import io
 import urllib.parse
 from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
-import textwrap  # PDF çökmesini engelleyecek kütüphane
+import textwrap
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -464,9 +464,10 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
+# --- GÜNCELLENMİŞ EMSAL BULUCU: Artık bulduğu kararların orijinal metinlerini de döndürüyor ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
-        return "Karar arşivi yüklenemedi."
+        return "Karar arşivi yüklenemedi.", []
     sektor_keywords = {
         "Kozmetik & Kişisel Bakım / Anne-Bebek": ["kozmetik", "doğal", "bitkisel", "organik", "cilt", "leke", "kırışıklık", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik", "sls", "paraben", "içermez", "pişik"],
         "Takviye Edici Gıda & Sağlık": ["takviye", "gıda", "sağlık beyanı", "tedavi", "hastalık", "kilo", "zayıflama", "bağışıklık", "eklem", "ağrı", "şifa", "onay", "kesin son", "iltihap"],
@@ -483,12 +484,17 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
         if "idari para" in k_lower or "durdurma" in k_lower or "dosya no" in k_lower:
             skor += 4
         if skor > 0:
-            skorlu.append((skor, karar[:1200]))
+            skorlu.append((skor, karar[:1200])) # LLM için özet uzunluğu
     skorlu.sort(key=lambda x: x[0], reverse=True)
-    secilenler = [k[1] for k in skorlu[:top_k]]
-    return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
+    
+    # En iyi kararların hem LLM formatını hem de orijinal metin listesini hazırlıyoruz
+    secilenler_metin = [k[1] for k in skorlu[:top_k]]
+    secilenler_metin = secilenler_metin if secilenler_metin else karar_arsivi[:2]
+    
+    birlestirilmis_emsal_str = "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler_metin)
+    return birlestirilmis_emsal_str, secilenler_metin
 
-# --- FPDF ÇÖKMESİNİ ENGELLEYEN %100 GARANTİLİ TEXTWRAP MOTORU ---
+# --- FPDF ÇÖKMESİNİ ENGELLEYEN TEXTWRAP MOTORU ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -496,12 +502,10 @@ def create_pdf(report_text, baslik_metni):
     
     tr_map = str.maketrans("ğĞüÜşŞçÇİı", "gGuUsScCIi")
     
-    # Başlık
     pdf.set_font("Helvetica", "B", 16)
     baslik_ascii = baslik_metni.translate(tr_map)
     pdf.cell(0, 10, baslik_ascii, ln=True, align="C")
     
-    # Tarih
     pdf.set_font("Helvetica", "I", 10)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 6, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
@@ -510,7 +514,6 @@ def create_pdf(report_text, baslik_metni):
     
     pdf.set_text_color(0, 0, 0)
 
-    # Metni Satır Satır FPDF'in multi_cell motoruna girmeden Python ile bölüyoruz
     lines = report_text.split('\n')
     for line in lines:
         line = line.strip()
@@ -518,7 +521,6 @@ def create_pdf(report_text, baslik_metni):
             pdf.ln(3)
             continue
         
-        # Sıkıntılı gizli boşlukları ve karakterleri güvenliye çevir
         line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').replace('\xa0', ' ').replace('\t', ' ')
         line_ascii = line_ascii.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
 
@@ -535,14 +537,11 @@ def create_pdf(report_text, baslik_metni):
             temiz_satir = line_ascii.replace("**", "").replace("*", "").strip()
             satir_yuksekligi = 6
 
-        # FPDF'in kendi bölücüsü yerine Textwrap ile sayfaya sığacak şekilde satırlara ayır
-        # Genişlik (width=85) font büyüklüğüne göre tam sayfaya oturur ve FPDF'in sınırları aşmasını engeller.
         wrapped_lines = textwrap.wrap(temiz_satir, width=85, break_long_words=True, replace_whitespace=False)
         
         for wl in wrapped_lines:
             pdf.cell(0, satir_yuksekligi, wl, ln=True)
             
-        # Eğer madde imi değilse paragraflar arası biraz nefes boşluğu bırak
         if not (line.startswith("* ") or line.startswith("- ")):
             pdf.ln(2)
             
@@ -656,11 +655,13 @@ def create_docx(dilekce_text):
     docx_io.seek(0)
     return docx_io.getvalue()
 
-# Session State
+# Session State Tanımları
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
     st.session_state.dilekce_sonucu = None
+if "kullanilan_emsaller" not in st.session_state:
+    st.session_state.kullanilan_emsaller = []
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 if "last_file_count" not in st.session_state:
@@ -758,7 +759,12 @@ if not is_radar:
                             url_metni, web_gorselleri = fetch_url_data(reklam_url)
                     
                     birlestirilmis_metin = f"{reklam_metni}\n\n[Kaynak Link]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
-                    ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
+                    
+                    # Emsal kararları hem LLM formatında hem de ham liste olarak alıyoruz
+                    ilgili_emsaller, emsal_liste = get_relevant_emsaller(birlestirilmis_metin, sektor)
+                    
+                    # Açılır pencereler için ham metinleri hafızaya kaydediyoruz
+                    st.session_state.kullanilan_emsaller = emsal_liste
                     
                     sistem_metodolojisi = f"""
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
@@ -851,6 +857,7 @@ RAPOR FORMATI:
                 if is_danisan:
                     with st.container(height=450):
                         st.markdown(st.session_state.rapor_sonucu)
+                    
                     try:
                         pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Reklam Uyum ve Risk Raporu")
                         st.download_button(
@@ -862,6 +869,16 @@ RAPOR FORMATI:
                         )
                     except Exception as e:
                         st.warning(f"PDF uyarısı: {e}")
+
+                    # --- EMSAL KARARLAR AÇILIR PENCERESİ (İç Denetim Modu) ---
+                    if st.session_state.kullanilan_emsaller:
+                        st.write("")
+                        st.markdown('<div class="section-heading" lang="tr">📚 Raporda Atıf Yapılan Emsal Kararların Orijinal Metinleri</div>', unsafe_allow_html=True)
+                        for idx, karar_metni in enumerate(st.session_state.kullanilan_emsaller):
+                            baslik_ipucu = karar_metni[:65].replace('\n', ' ') + "..."
+                            with st.expander(f"📄 Emsal Dosya {idx+1} | {baslik_ipucu}"):
+                                st.markdown(karar_metni)
+
                 else:
                     secili_gorunum = st.radio(
                         "Görünüm Seçiniz",
@@ -874,6 +891,7 @@ RAPOR FORMATI:
                     if secili_gorunum == "Haksız Rekabet ve İhlal Raporu":
                         with st.container(height=450):
                             st.markdown(st.session_state.rapor_sonucu)
+                        
                         try:
                             pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Rakip Reklam İhlal Raporu")
                             st.download_button(
@@ -885,6 +903,16 @@ RAPOR FORMATI:
                             )
                         except Exception as e:
                             st.warning(f"PDF uyarısı: {e}")
+                        
+                        # --- EMSAL KARARLAR AÇILIR PENCERESİ (Rakip Denetim Modu) ---
+                        if st.session_state.kullanilan_emsaller:
+                            st.write("")
+                            st.markdown('<div class="section-heading" lang="tr">📚 Raporda Atıf Yapılan Emsal Kararların Orijinal Metinleri</div>', unsafe_allow_html=True)
+                            for idx, karar_metni in enumerate(st.session_state.kullanilan_emsaller):
+                                baslik_ipucu = karar_metni[:65].replace('\n', ' ') + "..."
+                                with st.expander(f"📄 Emsal Dosya {idx+1} | {baslik_ipucu}"):
+                                    st.markdown(karar_metni)
+
                     else:
                         st.caption("İncelenen rakip tanıtım hakkında resmi Reklam Kurulu Şikayet Dilekçesi paneli.")
                         with st.expander("⚖️ Dilekçe Taraf Bilgilerini Düzenle", expanded=True):
