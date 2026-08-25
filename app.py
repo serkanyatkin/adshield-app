@@ -12,7 +12,9 @@ import glob
 import re
 import requests
 import io
-from urllib.parse import urljoin, quote_plus
+import urllib.parse
+from urllib.parse import urljoin, quote_plus, parse_qs, urlparse
+from bs4 import BeautifulSoup
 from concurrent.futures import ThreadPoolExecutor
 
 st.set_page_config(
@@ -21,7 +23,6 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Sayfa İçi Akıllı Kaydırma
 def trigger_scroll(position="top"):
     components.html(f"""
     <script>
@@ -47,7 +48,6 @@ def trigger_scroll(position="top"):
     </script>
     """, height=0, width=0)
 
-# Kurumsal Tema Stilleri
 st.markdown("""
 <div id="page-top-anchor"></div>
 <style>
@@ -157,36 +157,12 @@ st.markdown("""
         padding-bottom: 5px;
     }
 
-    .radar-links-box {
+    .radar-channel-card {
         background: #F8FAFC;
         border: 1px solid #CBD5E1;
         border-radius: 6px;
         padding: 12px 16px;
-        margin-bottom: 14px;
-        display: flex;
-        gap: 10px;
-        align-items: center;
-        flex-wrap: wrap;
-    }
-
-    .radar-link-btn {
-        display: inline-flex;
-        align-items: center;
-        gap: 4px;
-        background: #FFFFFF;
-        border: 1px solid #CBD5E1;
-        padding: 5px 10px;
-        border-radius: 4px;
-        font-size: 11.5px;
-        color: #1E293B;
-        text-decoration: none;
-        font-weight: 600;
-        transition: all 0.2s ease;
-    }
-    .radar-link-btn:hover {
-        border-color: #5D728B;
-        background: #F1F5F9;
-        color: #0F172A;
+        margin-bottom: 10px;
     }
 
     .stButton button[kind="primary"] {
@@ -205,7 +181,6 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# Üst Header
 st.markdown("""
 <div class="firm-header" lang="tr">
     <div>
@@ -217,10 +192,15 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 api_key = st.secrets.get("GEMINI_API_KEY", None)
-if not api_key:
-    with st.sidebar:
-        st.header("Sistem Ayarları")
+serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
+
+with st.sidebar:
+    st.header("Sistem & API Ayarları")
+    if not api_key:
         api_key = st.text_input("Gemini API Key:", type="password")
+    serpapi_key_input = st.text_input("SerpApi / Live Search Key (Opsiyonel):", type="password", value=serpapi_key or "")
+    if serpapi_key_input:
+        serpapi_key = serpapi_key_input
 
 def optimize_image(img, max_dimension=800):
     img = img.convert("RGB")
@@ -283,7 +263,7 @@ def generate_content_safe(contents, system_instruction=None):
 
 def download_single_img(url, headers):
     try:
-        res = requests.get(url, headers=headers, timeout=3)
+        res = requests.get(url, headers=headers, timeout=4)
         if res.status_code == 200 and len(res.content) > 3000:
             pil_img = Image.open(io.BytesIO(res.content))
             return optimize_image(pil_img)
@@ -291,46 +271,116 @@ def download_single_img(url, headers):
         pass
     return None
 
-def fetch_url_data(url):
-    if not url or not url.strip().startswith(("http://", "https://")):
-        return "", []
-    if any(sm in url.lower() for sm in ["instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com"]):
-        return "[Sosyal medya linki girildi. Görsel ve metin üzerinden incelenecektir.]", []
-    clean_text = ""
-    downloaded_images = []
-    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+def fetch_page_details(url):
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+        'Accept-Language': 'tr-TR,tr;q=0.9,en-US;q=0.8,en;q=0.7'
+    }
+    extracted_text = ""
+    image_urls = []
+    pil_images = []
+    
     try:
-        res = requests.get(url.strip(), headers=headers, timeout=4)
+        res = requests.get(url, headers=headers, timeout=5)
         if res.status_code == 200:
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(res.text, 'html.parser')
-                img_urls = []
-                og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
-                if og_img and og_img.get("content"):
-                    img_urls.append(urljoin(url, og_img["content"]))
-                for img_tag in soup.find_all("img"):
-                    src = img_tag.get("src") or img_tag.get("data-src")
-                    if src:
-                        full_img_url = urljoin(url, src)
-                        if not any(ext in full_img_url.lower() for ext in [".svg", "icon", "logo", "pixel", "avatar"]):
-                            if full_img_url not in img_urls:
-                                img_urls.append(full_img_url)
-                    if len(img_urls) >= 2:
-                        break
-                with ThreadPoolExecutor(max_workers=2) as executor:
-                    results = executor.map(lambda u: download_single_img(u, headers), img_urls[:2])
-                    for r in results:
-                        if r is not None:
-                            downloaded_images.append(r)
-                for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
-                    s.decompose()
-                clean_text = ' '.join(soup.get_text(separator=' ').split())[:2500]
-            except Exception:
-                clean_text = re.sub(r'<[^>]+>', ' ', res.text)[:2500]
+            soup = BeautifulSoup(res.text, 'html.parser')
+            
+            og_img = soup.find("meta", property="og:image") or soup.find("meta", attrs={"name": "twitter:image"})
+            if og_img and og_img.get("content"):
+                full_og = urljoin(url, og_img["content"])
+                if full_og not in image_urls:
+                    image_urls.append(full_og)
+                    
+            for img in soup.find_all("img"):
+                src = img.get("src") or img.get("data-src") or img.get("data-original") or img.get("data-lazy")
+                if src:
+                    full_src = urljoin(url, src)
+                    if not any(ext in full_src.lower() for ext in [".svg", "icon", "logo", "pixel", "avatar", "1x1"]):
+                        if full_src not in image_urls:
+                            image_urls.append(full_src)
+                if len(image_urls) >= 5:
+                    break
+                    
+            with ThreadPoolExecutor(max_workers=3) as executor:
+                downloaded = executor.map(lambda u: download_single_img(u, headers), image_urls[:3])
+                for p_img in downloaded:
+                    if p_img:
+                        pil_images.append(p_img)
+                        
+            title = soup.title.string.strip() if soup.title and soup.title.string else ""
+            meta_desc = ""
+            desc_tag = soup.find("meta", attrs={"name": "description"}) or soup.find("meta", property="og:description")
+            if desc_tag and desc_tag.get("content"):
+                meta_desc = desc_tag["content"].strip()
+                
+            for s in soup(['script', 'style', 'nav', 'footer', 'header', 'noscript', 'svg']):
+                s.decompose()
+                
+            body_text = ' '.join(soup.get_text(separator=' ').split())[:2000]
+            extracted_text = f"Başlık: {title}\nÖzet: {meta_desc}\nİçerik: {body_text}"
     except Exception as e:
-        clean_text = f"[Web içeriği çekilemedi: {e}]"
-    return clean_text, downloaded_images
+        extracted_text = f"[İçerik çekme uyarısı: {e}]"
+        
+    return extracted_text, image_urls, pil_images
+
+def perform_live_web_search(query, custom_serp_key=None):
+    results = []
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+    
+    if custom_serp_key:
+        try:
+            serp_url = f"https://serpapi.com/search.json?q={quote_plus(query)}&gl=tr&hl=tr&api_key={custom_serp_key}"
+            res = requests.get(serp_url, timeout=6).json()
+            if "organic_results" in res:
+                for r in res["organic_results"][:6]:
+                    results.append({
+                        "title": r.get("title", ""),
+                        "link": r.get("link", ""),
+                        "snippet": r.get("snippet", "")
+                    })
+                return results
+        except Exception:
+            pass
+
+    try:
+        ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query)}"
+        res = requests.get(ddg_url, headers=headers, timeout=5)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            for a in soup.find_all('a', class_='result__url'):
+                href = a.get('href', '')
+                if 'uddg=' in href:
+                    clean_link = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0])
+                else:
+                    clean_link = href
+                    
+                snippet_tag = a.find_parent('div', class_='result__body')
+                snippet = ""
+                title = ""
+                if snippet_tag:
+                    s_elem = snippet_tag.find('a', class_='result__snippet')
+                    t_elem = snippet_tag.find('a', class_='result__a')
+                    snippet = s_elem.text.strip() if s_elem else ""
+                    title = t_elem.text.strip() if t_elem else clean_link
+                    
+                if clean_link.startswith("http") and not any(ign in clean_link for ign in ["duckduckgo.com", "yandex", "bing"]):
+                    if not any(r["link"] == clean_link for r in results):
+                        results.append({"title": title, "link": clean_link, "snippet": snippet})
+                if len(results) >= 5:
+                    break
+    except Exception:
+        pass
+
+    if not results:
+        results = [
+            {"title": f"{query} - Trendyol Satış Sayfası", "link": f"https://www.trendyol.com/sr?q={quote_plus(query)}", "snippet": "Trendyol pazaryeri satıcı ve ürün sayfası."},
+            {"title": f"{query} - Hepsiburada Satış Sayfası", "link": f"https://www.hepsiburada.com/ara?q={quote_plus(query)}", "snippet": "Hepsiburada pazaryeri satıcı ve ürün sayfası."},
+            {"title": f"{query} - Meta Reklam Kütüphanesi", "link": f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={quote_plus(query)}&search_type=keyword_unordered&media_type=all", "snippet": "Instagram ve Facebook aktif reklam arşivi."},
+            {"title": f"{query} - Amazon Türkiye", "link": f"https://www.amazon.com.tr/s?k={quote_plus(query)}", "snippet": "Amazon Türkiye pazar yeri sonuçları."},
+            {"title": f"{query} - TikTok Video İndeksi", "link": f"https://www.tiktok.com/search?q={quote_plus(query)}", "snippet": "TikTok ürün videoları ve kullanıcı yorumları."}
+        ]
+        
+    return results
 
 @st.cache_data
 def load_and_index_kararlar():
@@ -415,7 +465,6 @@ def create_pdf(report_text, baslik_metni):
         pdf.multi_cell(0, 4.8, ascii_metin)
     return bytes(pdf.output())
 
-# Resmi Word (.docx) Formatı Üreticisi
 def create_docx(dilekce_text):
     doc = docx.Document()
     for section in doc.sections:
@@ -537,19 +586,14 @@ def create_docx(dilekce_text):
     docx_io.seek(0)
     return docx_io.getvalue()
 
-# Session State Değişkenleri
 MODLAR = [
     "Kurumsal Kampanya Uyum Denetimi (İç Revizyon)",
     "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)",
-    "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)"
+    "🎯 360° Canlı Ürün & Çoklu Mecra Radarı (Otomatik Arama & PDF Raporu)"
 ]
 
 if "hedef_mod" not in st.session_state:
     st.session_state.hedef_mod = MODLAR[2]
-
-if "mod_degisimi" in st.session_state and st.session_state.mod_degisimi:
-    st.session_state.hedef_mod = st.session_state.mod_degisimi
-    st.session_state.mod_degisimi = None
 
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
@@ -561,12 +605,9 @@ if "last_file_count" not in st.session_state:
     st.session_state.last_file_count = 0
 if "rakip_gorunum" not in st.session_state:
     st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
-if "radar_sonuclari" not in st.session_state:
-    st.session_state.radar_sonuclari = None
-if "radar_aktarildi_mesaj" not in st.session_state:
-    st.session_state.radar_aktarildi_mesaj = False
+if "radar_canli_rapor" not in st.session_state:
+    st.session_state.radar_canli_rapor = None
 
-# Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
 
 secili_indeks = MODLAR.index(st.session_state.hedef_mod) if st.session_state.hedef_mod in MODLAR else 2
@@ -581,14 +622,14 @@ mod_secimi = st.radio(
 
 st.session_state.hedef_mod = mod_secimi
 
-# MOD 3: 360° RAKİP, PAZARYERİ, GÖRSEL GALERİ & META RADARI
-if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)":
-    st.markdown('<div class="section-heading" lang="tr">🎯 360° Çok Katmanlı Rakip, Pazaryeri & Dijital Ayak İzi Radarı</div>', unsafe_allow_html=True)
-    st.caption("Ürün veya marka adını girin; sistem tüm pazaryerlerini (Trendyol, Hepsiburada, Amazon), ürün galeri görsellerini, web sitesini ve sosyal medya kanallarını link link analiz etsin.")
+# MOD 3: 360° CANLI RADAR (OTOMATİK ARAMA API & PDF ÇIKTI ODAKLI)
+if mod_secimi == "🎯 360° Canlı Ürün & Çoklu Mecra Radarı (Otomatik Arama & PDF Raporu)":
+    st.markdown('<div class="section-heading" lang="tr">🎯 360° Canlı Ürün & Çoklu Mecra Radarı</div>', unsafe_allow_html=True)
+    st.caption("Ürün veya marka adını girin; sistem internetteki canlı satış sayfalarını (Trendyol, Hepsiburada, Amazon, Web), görsel galerileri ve sosyal medya linklerini tarayıp her birini ayrı ayrı değerlendiren kapsamlı bir PDF Risk Raporu oluştursun.")
     
     col_rad1, col_rad2 = st.columns([1.8, 1])
     with col_rad1:
-        radar_sorgusu = st.text_input("Marka veya Ürün Adı", placeholder="Örn: Mamaaura Çatlak Yağı veya XYZ Leke Karşıtı Krem...")
+        radar_sorgusu = st.text_input("Taranacak Marka veya Ürün Adı", placeholder="Örn: Mamaaura Çatlak ve Selülit Yağı...")
     with col_rad2:
         radar_sektor = st.selectbox("Sektör", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
@@ -598,136 +639,147 @@ if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta T
             "Diğer"
         ])
         
-    if st.button("🚀 Tüm Pazaryerlerini, Görsel Galerilerini ve Sosyal Medyayı Derinlemesine Tara", type="primary"):
+    if st.button("🚀 Canlı Aramayı Başlat ve Ayrıntılı Risk Raporunu (PDF) Hazırla", type="primary"):
         if not api_key:
-            st.error("Lütfen geçerli bir Gemini API anahtarı tanımlayınız.")
+            st.error("Lütfen sol menüden veya sistemden geçerli bir Gemini API anahtarı tanımlayınız.")
         elif not radar_sorgusu.strip():
             st.warning("Lütfen taranacak bir marka veya ürün adı giriniz.")
         else:
-            with st.spinner(f"'{radar_sorgusu}' için tüm pazaryerleri, galeri görselleri, resmi web sitesi ve Meta reklamları taranıyor..."):
-                encoded_q = quote_plus(radar_sorgusu.strip())
+            with st.spinner("1/3 Canlı arama motoru çalıştırılıyor, aktif pazaryeri ve web linkleri toplanıyor..."):
+                found_links = perform_live_web_search(radar_sorgusu.strip(), custom_serp_key=serpapi_key)
                 
-                # Dinamik Link Envanteri Bağlantıları
-                link_meta = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={encoded_q}&search_type=keyword_unordered&media_type=all"
-                link_trendyol = f"https://www.trendyol.com/sr?q={encoded_q}"
-                link_hepsiburada = f"https://www.hepsiburada.com/ara?q={encoded_q}"
-                link_amazon = f"https://www.amazon.com.tr/s?k={encoded_q}"
-                link_ciceksepeti = f"https://www.ciceksepeti.com/arama?query={encoded_q}"
-                link_tiktok = f"https://www.tiktok.com/search?q={encoded_q}"
-                link_google_web = f"https://www.google.com/search?q={encoded_q}+resmi+web+sitesi+satış"
+            with st.spinner("2/3 Tespit edilen sayfalara bağlanılıyor, ürün galeri görselleri ve açıklamalar indiriliyor..."):
+                scraped_dossier = []
+                all_pil_images = []
+                
+                for item in found_links[:4]:
+                    t_url = item["link"]
+                    p_text, p_img_urls, p_pils = fetch_page_details(t_url)
+                    scraped_dossier.append({
+                        "title": item["title"],
+                        "url": t_url,
+                        "snippet": item["snippet"],
+                        "extracted_text": p_text,
+                        "image_urls": p_img_urls
+                    })
+                    all_pil_images.extend(p_pils[:2])
 
-                radar_prompt = f"""
-SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE TÜKETİCİ HUKUKU KAPSAMINDA UZMAN REKLAM BAŞDENETÇİSİ VE PAZAR İSTİHBARAT MOTORUSUN.
+            with st.spinner("3/3 Çok modlu yapay zeka denetçisi linkleri ve görselleri tek tek değerlendiriyor..."):
+                dossier_text_payload = ""
+                for idx, sc in enumerate(scraped_dossier, 1):
+                    dossier_text_payload += f"\n--- [KAYNAK {idx}: {sc['title']}] ---\n"
+                    dossier_text_payload += f"URL: {sc['url']}\n"
+                    dossier_text_payload += f"Arama Özeti: {sc['snippet']}\n"
+                    dossier_text_payload += f"Sayfa Verisi:\n{sc['extracted_text']}\n"
+                    dossier_text_payload += f"Tespit Edilen Görsel Linkleri ({len(sc['image_urls'])} adet):\n" + "\n".join(sc['image_urls'][:4]) + "\n"
 
-TARANAN MARKA / ÜRÜN: "{radar_sorgusu}"
+                radar_analysis_prompt = f"""
+SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, 6502 SAYILI KANUN VE SEKTÖREL MEVZUAT KAPSAMINDA ÇALIŞAN UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
+
+TARANAN ÜRÜN / MARKA: "{radar_sorgusu}"
 SEKTÖR: {radar_sektor}
 
+İNTERNETTEN CANLI OLARAK ÇEKİLEN VE İNCELENEN VERİ DOSYASI:
+{dossier_text_payload}
+
 GÖREVİN:
-Bu ürünün Türkiye pazarında yer alan TÜM DİJİTAL AYAK İZİNİ; her bir satış kanalını, pazaryerini, ürün galeri görsellerini, resmi web sitesini ve sosyal medya mecralarını AYRI AYRI VE GRANÜLER DETAYDA inceleyen kapsamlı bir "360° RİSK VE İHLAL DENETİM RAPORU" hazırlamaktır.
+Her bir mecra linkini, pazaryeri satıcılarını ve bu sayfalarda tespit edilen galeri görsellerini/videolarını TEK TEK, AYRI AYRI DEĞERLENDİREN çok kapsamlı bir "360° CANLI PAZAR VE DİJİTAL AYAK İZİ RİSK RAPORU" hazırlamaktır.
 
-RAPOR FORMATI (Aşağıdaki yapıyı eksiksiz uygula):
+RAPOR FORMATI (Aynen bu yapıda ve ayrıntılı hazırla):
 
-### 1. DİJİTAL AYAK İZİ VE MECRA ENVANTERİ
-* **Meta Reklam Kütüphanesi (Instagram & Facebook):** {link_meta}
-* **Trendyol Satıcı & Ürün Listesi:** {link_trendyol}
-* **Hepsiburada Satıcı & Ürün Listesi:** {link_hepsiburada}
-* **Amazon Türkiye Listesi:** {link_amazon}
-* **TikTok Video İndeksi:** {link_tiktok}
-* **Google Web & Satış Sayfaları İndeksi:** {link_google_web}
+================================================================================
+ADSHIELD 360° CANLI DİJİTAL AYAK İZİ & MEVZUAT UYUM RİSK RAPORU
+Taranan Ürün / Marka: {radar_sorgusu} | Sektör: {radar_sektor}
+Denetim Tarihi: {datetime.now().strftime('%d.%m.%Y %H:%M')}
+================================================================================
 
-### 2. TRENDYOL ÜRÜN SAYFASI & GÖRSEL GALERİ RİSK DEĞERLENDİRMESİ
-* **Ürün Başlığı & Satıcı İddiaları:** (Başlıkta yer alan süperlatif veya yasaklı ifadeler)
-* **Görsel 1 (Ana Kapak & Ambalaj Rozetleri):** (Kutu/şişe üzerindeki medikal haç/artı, dermokozmetik veya '10 kat' rozetlerinin hukuki riski)
-* **Görsel 2 (Etki & Öncesi/Sonrası - Before/After):** (Yara izi, çatlak yok etme veya yüzdesel garanti görselleri)
-* **Görsel 3 (Formülasyon & Doğallık İnfografikleri):** ('%100 Doğal', 'Kimyasal İçermez' veya hammadde kıyas dipnotları)
-* **Satıcı Soru-Cevap Paneli Tıbbi Yönlendirmeleri:** (Tüketici sorularına verilen tedavi edici veya ilaç niteliğindeki yanıtlar)
-* **Kanal Risk Puanı:** [YÜKSEK / ORTA / DÜŞÜK] (Mevzuat Maddeleri: Kozmetik Kanunu m. 2, Ticari Reklam Yön. m. 7)
+### I. TESPİT EDİLEN TÜM CANLI SATIŞ VE MEDYA LİNKLERİ ENVANTERİ
+(İncelenen tüm Trendyol, Hepsiburada, Amazon, Meta Reklam Kütüphanesi, TikTok ve Resmi Web linklerini URL adresleriyle listele).
 
-### 3. HEPSİBURADA & AMAZON TÜRKİYE PAZARYERİ RİSK DEĞERLENDİRMESİ
-* **Farklı Satıcı Varyantları ve İddialar:** (Pazaryerlerindeki alternatif satıcıların kullandığı tedavi/onarım açıklamaları)
-* **Fiyatlandırma & İndirim Algısı:** (Şişirilmiş referans fiyat üzerinden sahte indirim veya yapay süre baskısı)
-* **Kanal Risk Puanı:** [YÜKSEK / ORTA / DÜŞÜK] (Mevzuat Maddeleri: 6502 m. 62, Fiyat Etiketi Yön.)
+### II. LİNK VE GÖRSEL BAZINDA AYRINTILI RİSK DEĞERLENDİRMESİ
 
-### 4. RESMİ WEB SİTESİ VE DOĞRUDAN SATIŞ (LANDING PAGE) RİSK DEĞERLENDİRMESİ
-* **Manşet Banner & Sloganlar:** (Web sitesi ana sayfasındaki kesinlik vaatleri ve sloganlar)
-* **Klinik Test & Bilimsel İspat Standartları:** (Bitmiş ürün yerine hammadde testinin teşmili, geçersiz mikro-dipnotlar)
-* **Kanal Risk Puanı:** [YÜKSEK / ORTA / DÜŞÜK] (Mevzuat Maddeleri: Ticari Reklam Yön. m. 7/5 ve m. 8)
+#### [KAYNAK 1]: (Platform Adı & Sayfa Başlığı)
+* **İncelenen URL:** (URL Adresi)
+* **Tespit Edilen Sloganlar ve Ticari İddialar:** (Metindeki tırnak içi ifadeler)
+* **Ürün Görselleri & Galeri Analizi:** (Görsellerdeki ambalaj rozetleri, medikal haç/artı, öncesi/sonrası resimleri, % indirim vaatleri ve bu görsellerin linkleri)
+* **Hukuka Aykırılık Gerekçesi:** (Hangi kanun ve yönetmelik maddesi ihlal ediliyor?)
+* **Kanal Risk Derecesi & Skoru:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
-### 5. INSTAGRAM & FACEBOOK (META) REKLAMLARI VE REELS VİDEO RİSK DEĞERLENDİRMESİ
-* **Statik Post & Carousel Afiş İddiaları:** (Sponsorlu feed görsellerindeki liderlik ve garanti vaatleri)
-* **Reels / Video Ses Deşifreleri (Speech-to-Text):** (Videolarda konuşan kişinin sarf ettiği lipoliz, yağ parçalama veya yara izi giderme sözleri)
-* **Hedef Kitle İstismarı:** (Lohusa, emziren anneler veya bedensel estetik kaygısı taşıyan grupların istismarı)
-* **Kanal Risk Puanı:** [YÜKSEK / ORTA / DÜŞÜK] (Mevzuat Maddeleri: TİTCK Kılavuzları, Sağlık Beyanı Yön. m. 7)
+#### [KAYNAK 2]: (Platform Adı & Sayfa Başlığı)
+* **İncelenen URL:** (URL Adresi)
+* **Tespit Edilen Sloganlar ve Ticari İddialar:**
+* **Ürün Görselleri & Galeri Analizi:** (Tespit edilen görsel ve video bağlantılarıyla birlikte)
+* **Hukuka Aykırılık Gerekçesi:**
+* **Kanal Risk Derecesi & Skoru:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
-### 6. TİKTOK & INFLUENCER İŞBİRLİKLERİ RİSK DEĞERLENDİRMESİ
-* **İçerik Üretici Söylemleri & Örtülü Reklam Unsurları:** (İşbirliği etiketi eksikliği, tavsiye niteliğindeki tıbbi iddialar)
-* **Kanal Risk Puanı:** [YÜKSEK / ORTA / DÜŞÜK] (Mevzuat Maddeleri: Sosyal Medya Etkileyicileri Kılavuzu)
+#### [KAYNAK 3]: (Platform Adı & Sayfa Başlığı)
+* **İncelenen URL:** (URL Adresi)
+* **Tespit Edilen Sloganlar ve Ticari İddialar:**
+* **Ürün Görselleri & Galeri Analizi:**
+* **Hukuka Aykırılık Gerekçesi:**
+* **Kanal Risk Derecesi & Skoru:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
-### 7. KONSOLİDE HUKUKİ YAPTIRIM VE CEZA SKALASI
-* **Öngörülen İdari Yaptırımlar:** (6502 m. 77 uyarınca tüm mecralar için kümülatif idari para cezası ve durdurma/toplatma riskleri)
+#### [KAYNAK 4]: (Platform Adı & Sayfa Başlığı)
+* **İncelenen URL:** (URL Adresi)
+* **Tespit Edilen Sloganlar ve Ticari İddialar:**
+* **Ürün Görselleri & Galeri Analizi:**
+* **Hukuka Aykırılık Gerekçesi:**
+* **Kanal Risk Derecesi & Skoru:** [YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
+
+### III. SOSYAL MEDYA (INSTAGRAM & TİKTOK) REELS / VİDEO VE İÇERİK DEĞERLENDİRMESİ
+* **Sözlü İddialar & Video İçi Söylemler:** (Konuşulan lipoliz, hücre yenileme, leke yok etme iddiaları)
+* **Örtülü Reklam ve Influencer Tanıtım İhlalleri:** (Etiketleme ve işbirliği kurallarına uyum)
+
+### IV. REKLAM KURULU MEVZUATI UYARINCA ÖNGÖRÜLEN TOPLAM İDARİ YAPTIRIM VE CEZA SKALASI
+* **Mecra Bazlı İdari Para Cezası Riski (6502 sayılı Kanun m. 77)**
+* **Durdurma, Düzeltme ve Ürün Toplatma Yaptırım Riskleri**
+
+### V. HUKUKİ YASAL ŞERH
+"Bu rapor AdShield tarafından canlı web verileri taranarak oluşturulmuş teknik bir ön risk analizi olup, nihai hukuki mütalaa yerine geçmez."
 """
                 try:
-                    radar_cikti = generate_content_safe(radar_prompt)
-                    st.session_state.radar_sonuclari = {
-                        "sorgu": radar_sorgusu,
+                    payload_contents = [radar_analysis_prompt]
+                    if all_pil_images:
+                        payload_contents.extend(all_pil_images[:4])
+                        
+                    tam_radar_raporu = generate_content_safe(payload_contents)
+                    st.session_state.radar_canli_rapor = {
+                        "urun": radar_sorgusu,
                         "sektor": radar_sektor,
-                        "links": {
-                            "meta": link_meta,
-                            "trendyol": link_trendyol,
-                            "hepsiburada": link_hepsiburada,
-                            "amazon": link_amazon,
-                            "ciceksepeti": link_ciceksepeti,
-                            "tiktok": link_tiktok,
-                            "google": link_google_web
-                        },
-                        "analiz": radar_cikti
+                        "rapor": tam_radar_raporu,
+                        "kaynaklar": scraped_dossier
                     }
                 except Exception as e:
-                    st.error(f"Radar taraması sırasında hata oluştu: {e}")
+                    st.error(f"Canlı analiz sırasında hata oluştu: {e}")
 
-    if st.session_state.radar_sonuclari:
+    if st.session_state.radar_canli_rapor:
         st.write("")
-        r_data = st.session_state.radar_sonuclari
-        links = r_data["links"]
+        r_info = st.session_state.radar_canli_rapor
         
-        # Dijital Ayak İzi Kokpiti
-        st.markdown(f"""
-        <div class="radar-links-box">
-            <span style="font-size: 12px; font-weight: 700; color: #1E293B;">🔍 Canlı Mecra Link Envanteri:</span>
-            <a href="{links['trendyol']}" target="_blank" class="radar-link-btn">🛍️ Trendyol ↗</a>
-            <a href="{links['hepsiburada']}" target="_blank" class="radar-link-btn">📦 Hepsiburada ↗</a>
-            <a href="{links['amazon']}" target="_blank" class="radar-link-btn">🛒 Amazon TR ↗</a>
-            <a href="{links['ciceksepeti']}" target="_blank" class="radar-link-btn">🌸 Çiçeksepeti ↗</a>
-            <a href="{links['meta']}" target="_blank" class="radar-link-btn">📸 Meta Ad Library (Instagram) ↗</a>
-            <a href="{links['tiktok']}" target="_blank" class="radar-link-btn">🎵 TikTok ↗</a>
-            <a href="{links['google']}" target="_blank" class="radar-link-btn">🌐 Google Web İndeksi ↗</a>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown(f"**📡 İncelenen Ürün:** `{r_info['urun']}` | **Sektör:** `{r_info['sektor']}`")
         
-        tab_radar_rapor, tab_radar_ham = st.tabs(["📊 Çok Katmanlı Risk Raporu", "📋 Ham Veri"])
-        with tab_radar_rapor:
-            with st.container(height=450):
-                st.markdown(r_data['analiz'])
-        with tab_radar_ham:
-            st.text_area("Radar Çıktısı", value=r_data['analiz'], height=300)
+        with st.container(height=520):
+            st.markdown(r_info['rapor'])
             
-        st.write("")
-        if st.button("⚖️ Tüm Bu İhlalleri Konsolide Et ve Resmi Şikayet Dilekçesine Aktar", type="primary"):
-            st.session_state.rapor_sonucu = r_data['analiz']
-            st.session_state.dilekce_sonucu = None
-            st.session_state.rakip_gorunum = "Reklam Kurulu Şikayet Dilekçesi"
-            st.session_state.mod_degisimi = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
-            st.session_state.radar_aktarildi_mesaj = True
-            st.rerun()
+        col_pdf1, col_pdf2 = st.columns([1.5, 1])
+        with col_pdf1:
+            try:
+                pdf_bytes = create_pdf(r_info['rapor'], f"AdShield 360 Risk Raporu - {r_info['urun']}")
+                st.download_button(
+                    label="📄 360° Ayrıntılı Risk ve Delil Raporunu İndir (PDF)",
+                    data=pdf_bytes,
+                    file_name=f"AdShield_360_Risk_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
+                    mime="application/pdf",
+                    type="primary"
+                )
+            except Exception as e:
+                st.warning(f"PDF oluşturma uyarısı: {e}")
+        with col_pdf2:
+            st.caption("Rapor tüm linkleri, galeri görsellerini ve mecra bazlı risk puanlarını içerir.")
 
 # MOD 1 & 2: MANUEL İÇ DENETİM VE PİYASA İNCELEMESİ
 else:
     is_danisan = "İç Revizyon" in mod_secimi
-
-    if st.session_state.radar_aktarildi_mesaj:
-        st.success("✅ Radarda tespit edilen tüm pazaryeri, görsel galeri ve video ihlalleri aktarıldı. Aşağıdan taraf bilgilerini girerek resmi Word dilekçenizi oluşturabilirsiniz.")
-        st.session_state.radar_aktarildi_mesaj = False
-
     sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
     with sol_kolon:
@@ -792,7 +844,7 @@ else:
                     web_gorselleri = []
                     if reklam_url:
                         with st.spinner("Link içeriği taranıyor..."):
-                            url_metni, web_gorselleri = fetch_url_data(reklam_url)
+                            url_metni, web_gorselleri, _ = fetch_page_details(reklam_url)
                     
                     birlestirilmis_metin = f"{reklam_metni}\n\n[Kaynak Link]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
                     ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
