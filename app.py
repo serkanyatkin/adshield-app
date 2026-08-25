@@ -219,9 +219,8 @@ def get_working_model(system_instruction=None):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
-# --- YENİ: AKILLI BEKLEME (RETRY) KALKANI ---
 def call_api_with_retry(model, payload, stream=False):
-    """Google 429 Limit Hatası atarsa çökmek yerine 25 saniye bekler ve tekrar dener."""
+    """Google 429 Limit Hatası atarsa çökmek yerine 20 saniye bekler ve tekrar dener."""
     for attempt in range(3):
         try:
             if stream:
@@ -232,7 +231,7 @@ def call_api_with_retry(model, payload, stream=False):
             err_str = str(e)
             if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
                 if attempt < 2:
-                    time.sleep(25)  # Sistemi uyutarak limitin sıfırlanmasını bekle
+                    time.sleep(20)
                     continue
             raise e
     raise Exception("Google API limitleri aşıldı ve tekrar denemeler başarısız oldu.")
@@ -247,62 +246,38 @@ def generate_content_safe(contents, system_instruction=None):
     except Exception as e:
         raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
 
+# --- YENİ: KOTAYI KORUYAN "TEK SORGULU (SINGLE-CALL)" SENTEZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
+    genai.configure(api_key=api_key)
     
-    prompt_p1 = f"{system_instruction_base}\n\nROL 1: KATI MEVZUAT BAŞDENETÇİSİ.\nGöreviniz, materyali 6502 sayılı Kanun, Ticari Reklam Yönetmeliği ve TİTCK kılavuzlarına göre en sert ve acımasız şekilde incelemek; mevzuata aykırı tüm ifadeleri, gizli sağlık beyanlarını ve ispat yükümlülüğü açıklarını tek tek tespit etmektir."
-    prompt_p2 = f"{system_instruction_base}\n\nROL 2: KIDEMLİ HAKSIZ REKABET VE TÜKETİCİ HUKUKU AVUKATI.\nGöreviniz, materyali ticari etki, haksız rekabet, tüketiciyi yanıltma algısı ve Reklam Kurulu nezdinde emsal oluşturacak argümanlar açısından değerlendirmektir."
-    
-    payload_1 = [prompt_p1] + contents
-    payload_2 = [prompt_p2] + contents
-    
-    try:
-        model = get_working_model()
-        
-        # 1. Sorgu (Koruma Kalkanlı)
-        r1 = call_api_with_retry(model, payload_1, stream=False)
-        time.sleep(2) # Modeller arası ufak nefes payı
-        
-        # 2. Sorgu (Koruma Kalkanlı)
-        r2 = call_api_with_retry(model, payload_2, stream=False)
-        
-        if r1 and r1.text and r2 and r2.text:
-            analysis_1 = r1.text
-            analysis_2 = r2.text
-        else:
-            yield f"Analiz başlatılamadı. Model ({TARGET_MODEL}) eksik yanıt döndürdü."
-            return
-    except Exception as e:
-        yield f"Analiz başlatılamadı. Hata: {e}"
-        return
-
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
-    synthesis_prompt = f"""
-SEN KIDEMLİ BİR HUKUK MÜŞAVİRİ VE NİHAİ RAPOR HAKEMİSİN.
-Aşağıda aynı materyali iki farklı profesyonel bakış açısıyla inceleyen iki uzman raporu yer almaktadır:
+    
+    # Eskiden 3 kez attığımız sorguyu tek bir güçlü metinde (Master Prompt) birleştirdik.
+    single_master_prompt = f"""
+{system_instruction_base}
 
---- UZMAN RAPORU 1 (Başdenetçi Gözüyle) ---
-{analysis_1}
-
---- UZMAN RAPORU 2 (Haksız Rekabet Avukatı Gözüyle) ---
-{analysis_2}
-
-GÖREVİN: Bu iki raporun en güçlü ve hukuki açıdan en doğru tespitlerini harmanlayarak kusursuz bir {rapor_turu_adi} üretmektir.
+GÖREVİN: Aşağıdaki materyali tek seferde, eşzamanlı olarak hem KATI BİR MEVZUAT BAŞDENETÇİSİ hem de KIDEMLİ BİR HAKSIZ REKABET AVUKATI şapkalarıyla incelemek ve bana doğrudan KUSURSUZ, HARMANLANMIŞ BİR {rapor_turu_adi} üretmektir.
+(Önce kendi içinde ihlalleri bul, sonra cezai risklerini hesapla ve doğrudan formata uygun nihai raporu bas.)
 
 KESİN KURALLAR:
 1. "KİME:", "HAZIRLAYAN:", "KONU:" gibi bürokratik giriş antetlerini ASLA KULLANMA. Doğrudan raporun ana özetine veya ihlal analizine başla.
-2. Emsal Kararlar bölümünde sürekli olarak "L'Oreal", "La Roche-Posay" gibi aynı ve klasik markaları TEKRAR ETME. Çeşitliliği sağla ve sektöre uygun farklı Reklam Kurulu kararları kurgula/bul.
+2. Emsal Kararlar bölümünde sürekli olarak "L'Oreal", "La Roche-Posay" gibi aynı markaları TEKRAR ETME. Çeşitliliği sağla ve gönderdiğim güncel emsalleri kullan.
 3. Raporu okuyan kişiyi yormayacak, şık ve ferah bir Markdown düzeni (kalın başlıklar, düzgün listeler) kullan.
 """
+    
+    payload = [single_master_prompt] + contents
+    
     try:
-        # Sentez Yayın Akışı (Koruma Kalkanlı)
-        response = call_api_with_retry(model, synthesis_prompt, stream=True)
+        model = get_working_model()
+        # Sadece 1 kez API'ye gidiyoruz (Kotadan müthiş tasarruf!)
+        response = call_api_with_retry(model, payload, stream=True)
         for chunk in response:
             if chunk.text:
                 yield chunk.text
     except Exception as e:
-        yield f"\n\nSentezleme sırasında hata oluştu: {e}"
+        yield f"Sentezleme sırasında hata oluştu. Limitlerinizi kontrol ediniz. Hata: {e}"
 
 def download_single_img(url, headers):
     try:
@@ -452,7 +427,6 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
-# --- YENİ: L'OREAL'İ ENGELLEYEN VE PUANLAYAN EMSAL MOTORU ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi.", []
@@ -473,12 +447,11 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
         if "idari para" in k_lower or "durdurma" in k_lower or "dosya no" in k_lower:
             skor += 4
             
-        # L'Oreal ve La Roche takıntısını kırmak için negatif puanlama
         if "l'oreal" in k_lower or "la roche" in k_lower:
             skor -= 50
             
         if skor > 0:
-            skorlu.append((skor, karar[:1200])) # LLM için özet uzunluğu
+            skorlu.append((skor, karar[:1200]))
             
     skorlu.sort(key=lambda x: x[0], reverse=True)
     
@@ -772,8 +745,6 @@ Sektör: {sektor} | Mecra: {mecra}
 """
                     if is_danisan:
                         base_prompt = sistem_metodolojisi + f"""
-GÖREVİN: Kapsamlı ve net bir 'Mevzuat Uyum ve Revizyon Raporu' hazırlamaktır.
-
 RAPOR FORMATI:
 ### [RİSK DERECESİ: YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
@@ -798,8 +769,6 @@ RAPOR FORMATI:
 """
                     else:
                         base_prompt = sistem_metodolojisi + f"""
-GÖREVİN: Rakip materyaldeki hukuka aykırılıkları ortaya koyan bir 'Piyasa İhlal Raporu' hazırlamaktır.
-
 RAPOR FORMATI:
 ### [İHLAL DERECESİ: AĞIR / ORTA / HAFİF] - İhlal Skoru: [0-100]
 
@@ -831,7 +800,7 @@ RAPOR FORMATI:
                     rapor_alani = st.empty()
                     try:
                         tam_rapor = ""
-                        with st.spinner("Çoklu Rol Sentezi (Başdenetçi + Hukuk Müşaviri) ile analiz yapılıyor... Lütfen bekleyiniz."):
+                        with st.spinner("Tekil Sentez Motoru çalışıyor... (Kotanız korunuyor)"):
                             for parca in generate_multi_role_synthesis_stream(icerik_listesi, base_prompt, is_danisan):
                                 tam_rapor += parca
                                 rapor_alani.markdown(tam_rapor + "▌")
