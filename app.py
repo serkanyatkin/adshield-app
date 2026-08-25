@@ -410,11 +410,11 @@ def create_pdf(report_text, baslik_metni):
 
     return bytes(pdf.output())
 
-# Resmi Word (.docx) Formatı Üreticisi
+# Resmi Word (.docx) Formatı Üreticisi (Calibri, İki Yana Yaslı, Sıkı Boşluklu)
 def create_docx(dilekce_text):
     doc = docx.Document()
     
-    # Sayfa Kenar Boşlukları (Standart Resmi Yazışma)
+    # Standart Avukatlık Dilekçe Marjları
     for section in doc.sections:
         section.top_margin = Inches(1)
         section.bottom_margin = Inches(1)
@@ -423,75 +423,123 @@ def create_docx(dilekce_text):
         
     style = doc.styles['Normal']
     font = style.font
-    font.name = 'Times New Roman'
-    font.size = Pt(11.5)
-    font.color.rgb = RGBColor(0x11, 0x18, 0x27)
+    font.name = 'Calibri'
+    font.size = Pt(11)
+    font.color.rgb = RGBColor(0x00, 0x00, 0x00)
     
-    lines = dilekce_text.split("\n")
+    # Yasaklı kelimeleri ve markdown kalıntılarını filtrele
+    cleaned = dilekce_text.replace("---", "").replace("###", "").replace("##", "").replace("#", "")
+    cleaned = re.sub(r'(?i)\bmüstakilen\b\s*', '', cleaned)
+    
+    lines = cleaned.split("\n")
+    in_signature = False
+    
     for line in lines:
         line_str = line.strip()
         if not line_str:
-            doc.add_paragraph("")
             continue
             
-        # Makam Başlıkları
-        if any(h in line_str.upper() for h in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]):
+        raw_line = line_str.replace("**", "").replace("*", "").strip()
+        
+        # 1. Başlıklar: T.C. TİCARET BAKANLIĞI
+        if any(h in raw_line.upper() for h in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]):
             p = doc.add_paragraph()
             p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.paragraph_format.space_before = Pt(0)
             p.paragraph_format.space_after = Pt(2)
-            run = p.add_run(line_str.replace("#", "").strip())
-            run.bold = True
-            run.font.size = Pt(12)
-        # Taraf ve Konu Alanları
-        elif any(line_str.startswith(k) for k in ["ŞİKAYET EDEN", "ADRES", "VEKİLİ", "ŞİKAYET EDİLEN", "ŞİKAYET KONUSU", "KONU", "AÇIKLAMALAR", "SONUÇ VE İSTEM"]):
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            r.font.size = Pt(11.5)
+            continue
+            
+        # 2. İmza Bloğu (Sola Yaslı, Sıfır Satır Aralığı)
+        if any(sig_start in raw_line for sig_start in ["ŞİKAYET EDEN MÜVEKKİL", "ŞİKAYET EDEN VEKİLİ", "ŞİKAYET EDEN MÜVEKKİL VEKİLİ"]):
+            in_signature = True
+            
+        if in_signature:
             p = doc.add_paragraph()
-            p.paragraph_format.space_before = Pt(6)
-            p.paragraph_format.space_after = Pt(4)
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(0)
+            p.paragraph_format.line_spacing = 1.0
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            continue
+
+        # 3. Taraf Bilgileri ve Şikayet Konusu
+        if any(raw_line.startswith(k) for k in [
+            "ŞİKAYET EDEN:", "ŞİKAYET EDEN :", 
+            "ADRES:", "ADRES :", 
+            "VEKİLİ:", "VEKİLİ / İLETİŞİM:", "VEKİLİ :",
+            "ŞİKAYET EDİLEN:", "ŞİKAYET EDİLEN :", 
+            "İNCELEME LİNKİ:", "İNCELEME LİNKİ :", 
+            "ŞİKAYET KONUSU:", "ŞİKAYET KONUSU :", "KONU:", "KONU :"
+        ]):
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(1)
+            p.paragraph_format.space_after = Pt(3)
             p.paragraph_format.line_spacing = 1.15
             
-            clean_l = line_str.replace("###", "").replace("##", "").replace("#", "").strip()
-            if ":" in clean_l:
-                parts = clean_l.split(":", 1)
-                r1 = p.add_run(parts[0].replace("**", "") + "\t: ")
+            if ":" in raw_line:
+                parts = raw_line.split(":", 1)
+                r1 = p.add_run(parts[0].strip() + "\t: ")
                 r1.bold = True
-                r2 = p.add_run(parts[1].replace("**", "").strip())
+                r1.font.name = 'Calibri'
+                r2 = p.add_run(parts[1].strip())
+                r2.font.name = 'Calibri'
             else:
-                r = p.add_run(clean_l.replace("**", ""))
+                r = p.add_run(raw_line)
                 r.bold = True
-        # Numaralı Madde Başlıkları
-        elif re.match(r'^\d+\.\s', line_str):
+                r.font.name = 'Calibri'
+            continue
+
+        # 4. Bölüm Başlıkları (AÇIKLAMALAR, SONUÇ VE İSTEM)
+        if raw_line in ["AÇIKLAMALAR:", "AÇIKLAMALAR", "SONUÇ VE İSTEM:", "SONUÇ VE İSTEM"]:
             p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.LEFT
             p.paragraph_format.space_before = Pt(8)
             p.paragraph_format.space_after = Pt(4)
             p.paragraph_format.line_spacing = 1.15
-            clean_heading = line_str.replace("**", "").replace("###", "").strip()
-            r = p.add_run(clean_heading)
+            r = p.add_run(raw_line)
             r.bold = True
-        # Madde İçi Tire / Madde İşaretleri
-        elif line_str.startswith(("- ", "* ", "• ")):
-            p = doc.add_paragraph(style='List Bullet')
-            p.paragraph_format.space_after = Pt(3)
-            p.paragraph_format.line_spacing = 1.15
-            clean_item = line_str[2:].strip()
-            parts = re.split(r'(\*\*.*?\*\*)', clean_item)
-            for part in parts:
-                if part.startswith("**") and part.endswith("**"):
-                    r = p.add_run(part[2:-2])
-                    r.bold = True
-                else:
-                    p.add_run(part)
-        # Normal Gövde Paragrafları
-        else:
+            r.font.name = 'Calibri'
+            continue
+
+        # 5. Cümle Şeklindeki Numaralı İhlal Başlıkları (1. ..., 2. ...)
+        if re.match(r'^\d+\.\s', raw_line):
             p = doc.add_paragraph()
-            p.paragraph_format.space_after = Pt(4)
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(6)
+            p.paragraph_format.space_after = Pt(2)
             p.paragraph_format.line_spacing = 1.15
-            parts = re.split(r'(\*\*.*?\*\*)', line_str)
-            for part in parts:
-                if part.startswith("**") and part.endswith("**"):
-                    r = p.add_run(part[2:-2])
-                    r.bold = True
-                else:
-                    p.add_run(part)
+            r = p.add_run(raw_line)
+            r.bold = True
+            r.font.name = 'Calibri'
+            continue
+
+        # 6. Madde İçi Listeler
+        if raw_line.startswith(("- ", "• ")):
+            p = doc.add_paragraph(style='List Bullet')
+            p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+            p.paragraph_format.space_before = Pt(0)
+            p.paragraph_format.space_after = Pt(2)
+            p.paragraph_format.line_spacing = 1.15
+            r = p.add_run(raw_line[2:].strip())
+            r.font.name = 'Calibri'
+            continue
+
+        # 7. Standart Gövde Metinleri (İki Yana Yaslı, Sıkı Boşluk)
+        p = doc.add_paragraph()
+        p.alignment = WD_ALIGN_PARAGRAPH.JUSTIFY
+        p.paragraph_format.space_before = Pt(0)
+        p.paragraph_format.space_after = Pt(3)
+        p.paragraph_format.line_spacing = 1.15
+        r = p.add_run(raw_line)
+        r.font.name = 'Calibri'
                     
     docx_io = io.BytesIO()
     doc.save(docx_io)
@@ -724,78 +772,92 @@ RAPOR FORMATI:
                 else:
                     st.caption("İncelenen rakip tanıtım hakkında resmi Reklam Kurulu Şikayet Dilekçesi paneli.")
                     
-                    # Dilekçe Taraf & Sicil Bilgi Paneli
-                    with st.expander("⚖️ Dilekçe Taraf ve Sicil Bilgilerini Düzenle", expanded=True):
+                    # Dilekçe Taraf & Bilgi Paneli
+                    with st.expander("⚖️ Dilekçe Taraf Bilgilerini Düzenle", expanded=True):
                         c_taraf1, c_taraf2 = st.columns(2)
                         with c_taraf1:
-                            sikayet_eden_unvan = st.text_input("Şikayet Eden (Müvekkil) Unvanı / VKN / MERSİS", value="", placeholder="Örn: ABC İlaç Kozmetik Paz. A.Ş. MERSİS: 0123456789")
+                            sikayet_eden_unvan = st.text_input("Şikayet Eden (Müvekkil) Unvanı / Vergi No / MERSİS No", value="", placeholder="Örn: ABC İlaç Kozmetik Paz. A.Ş. MERSİS: 0123456789")
                             sikayet_eden_adres = st.text_area("Şikayet Eden Adresi", height=65, placeholder="Cadde, Mahalle, No, İlçe / İl")
-                            vekil_bilgisi = st.text_input("Vekil & İletişim Bilgisi", placeholder="Örn: Vekili Av. [Ad Soyad] - İletişim: 05XX XXX XX XX")
+                            vekil_bilgisi = st.text_input("Vekil & İletişim Bilgisi", placeholder="Örn: Av. [Ad Soyad] - İletişim: 05XX XXX XX XX")
                         with c_taraf2:
-                            sikayet_edilen_unvan = st.text_input("Şikayet Edilen Rakip Unvan / Satıcı / VKN", value="", placeholder="Örn: 1. XYZ Kozmetik San. A.Ş. VKN: 987654321 / 2. Satıcı Şahıs...")
+                            sikayet_edilen_unvan = st.text_input("Şikayet Edilen Rakip Unvan / Vergi No / MERSİS No", value="", placeholder="Örn: 1. XYZ Kozmetik A.Ş. VKN: 987654321 / 2. Satıcı Şahıs...")
                             sikayet_edilen_adres = st.text_area("Şikayet Edilen Adresi / Platform Bilgisi", height=65, placeholder="Şirket Adresi veya E-Ticaret Pazaryeri Mağaza Bilgisi")
 
                     if not st.session_state.dilekce_sonucu:
                         if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla (Word)", type="primary"):
                             with st.spinner("Kurumsal Reklam Kurulu şikayet dilekçesi hazırlanıyor..."):
                                 try:
+                                    s_eden = sikayet_eden_unvan.strip() if sikayet_eden_unvan.strip() else "[Şikayet Eden Şirket / Müvekkil Unvanı / MERSİS / VKN]"
+                                    s_eden_adr = sikayet_eden_adres.strip() if sikayet_eden_adres.strip() else "[Şikayet Eden Şirket Adresi]"
+                                    s_vekil = vekil_bilgisi.strip() if vekil_bilgisi.strip() else "Av. [Vekil Adı Soyadı] - İletişim: [Telefon / E-posta]"
+                                    s_edilen = sikayet_edilen_unvan.strip() if sikayet_edilen_unvan.strip() else "[Şikayet Edilen Firma Unvanı / Satıcı Bilgisi / VKN]"
+                                    s_edilen_adr = sikayet_edilen_adres.strip() if sikayet_edilen_adres.strip() else "[Şikayet Edilen Adres / Platform Bilgisi]"
+                                    s_link = reklam_url.strip() if reklam_url.strip() else "[İncelenen Satış Sayfası / Tanıtım URL]"
+
                                     dilekce_prompt = f"""
 Sen tüketici hukuku, haksız rekabet ve Reklam Kurulu regülasyonlarında son derece tecrübeli kıdemli bir Hukuk Müşavirisin.
 Aşağıda incelenen rakip tanıtımına ilişkin teknik ihlal raporu ve girilen taraf bilgileri yer almaktadır:
 
-TEKNİK İHLAL RAPORU VE TESPİTLER:
+TEKNİK İHLAL RAPORU:
 {st.session_state.rapor_sonucu}
 
-TARAF VE SİCİL BİLGİLERİ:
-ŞİKAYET EDEN: {sikayet_eden_unvan if sikayet_eden_unvan else "[Şikayet Eden Şirket / Müvekkil Unvanı, VKN / MERSİS]"}
-ŞİKAYET EDEN ADRES: {sikayet_eden_adres if sikayet_eden_adres else "[Şikayet Eden Şirket Adresi]"}
-VEKİL / İLETİŞİM: {vekil_bilgisi if vekil_bilgisi else "[Vekili Avukat Ad Soyad - İletişim: ...]"}
-ŞİKAYET EDİLEN: {sikayet_edilen_unvan if sikayet_edilen_unvan else "[Şikayet Edilen Firma Unvanı, Satıcı Adı, VKN / MERSİS]"}
-ŞİKAYET EDİLEN ADRES: {sikayet_edilen_adres if sikayet_edilen_adres else "[Şikayet Edilen Adres / Platform Linki]"}
-İNCELEME LİNKİ: {reklam_url if reklam_url else "[İncelenen Satış Sayfası / Tanıtım URL]"}
+TARAF BİLGİLERİ:
+ŞİKAYET EDEN: {s_eden}
+ADRES: {s_eden_adr}
+VEKİLİ / İLETİŞİM: {s_vekil}
+ŞİKAYET EDİLEN: {s_edilen}
+ADRES: {s_edilen_adr}
+İNCELEME LİNKİ: {s_link}
 
 GÖREVİN:
-Yapay zeka şablonlarından uzak; doğrudan Türk idari yargısı ve Ticaret Bakanlığı Reklam Kurulu teamüllerine uygun, derinlemesine hukuki gerekçeler içeren resmi bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+Aşağıdaki kurallara KESİNLİKLE uyarak resmi bir REKLAM KURULU ŞİKAYET DİLEKÇESİ hazırlamaktır.
 
-DİLEKÇE YAPISI VE ÜSLUP KURALLARI:
+ÖNEMLİ BİÇİM VE İÇERİK KURALLARI:
+1. METİNDE ASLA markdown karakterleri (*, #, ---) KULLANMA. Düz metin olarak çıktı ver.
+2. DİLEKÇE GÖVDESİNDE ASLA EMSAL KARARLARA YER VERME (Emsal kararlar bölümünü veya dosya numaralarını dilekçeye yazma).
+3. METİNDE ASLA "müstakilen" KELİMESİNİ KULLANMA.
+4. "AÇIKLAMALAR" altındaki 1, 2, 3, 4, 5 gibi tüm madde başlıkları TAM VE ANLAMLI BİRER HUKUKİ CÜMLE olsun (Örn: "2. Kozmetik Ürün Tanımını Aşan ve İlaç Hissi Veren Hukuka Aykırı Sağlık Beyanları Kullanılmıştır.").
+5. Taraf bilgilerinin yanına fazladan "(Sicil No: ...)" gibi ifadeler EKLEME; yukarıda verilen metni aynen kullan.
+
+DİLEKÇE YAPISI:
 
 T.C. TİCARET BAKANLIĞI
 REKLAM KURULU BAŞKANLIĞINA
 ANKARA
 
-ŞİKAYET EDEN : (Yukarıdaki unvan ve sicil)
-ADRES : (Yukarıdaki adres)
-VEKİLİ : (Yukarıdaki vekil)
-ŞİKAYET EDİLEN : (Yukarıdaki şikayet edilen)
-ADRES : (Yukarıdaki rakip adres)
-ŞİKAYET KONUSU : (İncelenen URL ve mecradaki tanıtımlarda yer alan açık mevzuat ihlalleri; sağlık beyanı, metabolik etki iddiası, kesinlik/yüzde vaatleri, hammadde kıyası, dipnot kuralları, aldatıcı kategori ve amblem kullanımı belirtilerek; 6502 sayılı Kanun, Ticari Reklam Yönetmeliği ve sektörel kılavuzlar uyarınca REKLAMLARIN TEDBİREN DURDURULMASI ve MÜSTAKİLEN İDARİ PARA CEZASI UYGULANMASI talebidir.)
+ŞİKAYET EDEN: {s_eden}
+ADRES: {s_eden_adr}
+VEKİLİ / İLETİŞİM: {s_vekil}
+ŞİKAYET EDİLEN: {s_edilen}
+ADRES: {s_edilen_adr}
+İNCELEME LİNKİ: {s_link}
+ŞİKAYET KONUSU: {s_link} adresinde ve ilgili mecralarda satışa sunulan ürünün tanıtımlarında yer alan mevzuata aykırı sağlık beyanları, fizyolojik etki iddiaları, aldatıcı karşılaştırma, geçersiz dipnot, yanıltıcı indirim ve kesinlik vaatleri suretiyle 6502 sayılı Kanun ve Ticari Reklam Yönetmeliği'nin ihlal edilmesi nedeniyle ilgililer hakkında REKLAMLARIN TEDBİREN DURDURULMASI ve İDARİ PARA CEZASI UYGULANMASI talebidir.
 
 AÇIKLAMALAR:
-(Giriş Paragrafı: Şikayet edilen tarafın hangi platform/mecrada, hangi ticari ürün adıyla satış ve tanıtım yaptığı, ürünün niteliği ve tüketiciyi aldatıcı genel çerçeve).
+(Giriş paragrafı: Şikayet edilen tarafın tanıtım yaptığı mecra, ürün adı ve genel aldatıcı çerçeve).
 
 1. Somut Olarak Tespit Edilen Mevzuata Aykırı Reklam ve Tanıtım İfadeleri:
-(Tanıtımda tespit edilen tüm tırnak içi iddiaları, afiş başlıklarını, "%...", "10 kat güçlü", "yara izi/tedavi", "dermokozmetik", "medikal amblem/haç" vb. ifadeleri tek tek liste halinde maddeleştir).
+(Tanıtımda yer alan tüm tırnak içi yasaklı ifadeleri, sloganları, oranları madde madde sırala).
 
-2. [SAĞLIK BEYANI / İLAÇ ALGISI İLE İLGİLİ TAM BİR CÜMLE HUKUKİ BAŞLIK]:
-(5324 sayılı Kozmetik Kanunu m. 2, Kozmetik Yönetmeliği m. 4 ve Sağlık Beyanı Yönetmeliği m. 7 hükümleriyle somut iddiaları kıyaslayarak neden yasak bir sağlık beyanı olduğunu açıkla).
+2. [Kozmetik/Gıda Mevzuatını Aşan ve İlaç Algısı Oluşturan Yasaklı Sağlık Beyanlarına İlişkin Tam Cümle Başlık]:
+(5324 sayılı Kanun, Kozmetik Yönetmeliği m. 4 ve Sağlık Beyanı Yönetmeliği m. 7 çerçevesinde gerekçelendir).
 
-3. [METABOLİK / BİYOKİMYASAL FİZYOLOJİK ETKİ VE İSPATSIZ MEKANİZMA İDDİALARI İLE İLGİLİ TAM BİR CÜMLE BAŞLIK]:
-(TİTCK Kılavuzları ve TGK düzenlemeleri uyarınca yağ parçalama, hücre yenileme veya tedavi edici fizyolojik mekanizma iddialarının hukuka aykırılığını izah et).
+3. [Metabolik ve Biyokimyasal Düzeyde Fizyolojik Etki İddialarının Mevzuata Aykırılığına İlişkin Tam Cümle Başlık]:
+(TİTCK Kılavuzları ve ilgili düzenlemeler uyarınca biyokimyasal mekanizma iddialarının yasaklığını açıkla).
 
-4. [HAMMADDE İDDİASININ BİTMİŞ ÜRÜNE TEŞMİLİ, KARŞILAŞTIRMALI REKLAM VE GEÇERSİZ DİPNOT KULLANIMINA İLİŞKİN TAM BİR CÜMLE BAŞLIK]:
-(Ticari Reklam Yönetmeliği m. 7/5 "ana vaadin anlamını bozan dipnot kullanılamaz" kuralı ve m. 8 ispat yükümlülüğü gereğince, tek bir hammadde testinin bitmiş ürünün insan vücudundaki etkisi gibi sunulamayacağını açıkla).
+4. [Hammadde İddiasının Bitmiş Ürüne Teşmili, Karşılaştırmalı Reklam ve Geçersiz Dipnot Kullanımına İlişkin Tam Cümle Başlık]:
+(Ticari Reklam Yönetmeliği m. 7/5 ve m. 8 uyarınca ana vaadi çürüten dipnot yasağını ve ispat yükünü izah et).
 
-5. [KESİNLİK, YÜZDESEL GARANTİ VE HASSAS TÜKETİCİ KİTLESİNİN İSTİSMARINA İLİŞKİN TAM BİR CÜMLE BAŞLIK]:
-("%80 azalma", "elveda", "kesin son" gibi vaatlerin ortalama tüketici algısındaki aldatıcı niteliğini ve varsa özel tüketici gruplarının istismarını açıkla).
-
-6. Reklam Kurulu Emsal Kararları ve İçtihatlar:
-(Benzer iddialara Reklam Kurulu'nun daha önce verdiği somut durdurma ve idari para cezası kararlarını emsal göster).
+5. [Kesinlik Bildiren Vaatler, Tüketicinin İstismarı ve Aldatıcı Fiyatlandırma Uygulamalarına İlişkin Tam Cümle Başlık]:
+(Kesinlik vaatleri ve yapay stok/süre/indirim manipülasyonlarını gerekçelendir).
 
 SONUÇ VE İSTEM:
-(Yukarıdaki açıklamalar çerçevesinde reklamların tedbiren ve nihai olarak DURDURULMASINA, yayından kaldırılmasına ve sorumlu şirket hakkında müstakilen İDARİ PARA CEZASI uygulanmasına karar verilmesi talebi).
+Yukarıda arz ve izah edilen nedenlerle; şikayet edilen tarafın 6502 sayılı Kanun ve ilgili mevzuata aykırı tanıtımları hakkında gerekli incelemelerin yapılarak;
+1. Anılan hukuka aykırı reklamların 6502 sayılı Kanun'un 63 ve 77. maddeleri gereğince TEDBİREN DURDURULMASINA,
+2. Reklam Veren ve ilgililer hakkında 6502 sayılı Kanun'un 77. maddesi uyarınca İDARİ PARA CEZASI UYGULANMASINA karar verilmesini saygıyla talep ederiz.
 
-[Şikayet Eden Müvekkil Unvanı]
-Vekili [Vekil Adı]
+ŞİKAYET EDEN MÜVEKKİL VEKİLİ
+{s_vekil}
 """
                                     st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
                                     st.rerun()
@@ -820,7 +882,7 @@ Vekili [Vekil Adı]
                             except Exception as e:
                                 st.warning(f"Word çıktısı oluşturma uyarısı: {e}")
                         with col_d2:
-                            if st.button("🔄 Dilekçeyi Yeniden Oluştur"):
+                            if st.button("🔄 Dilekçeyi Yeniden Düzenle"):
                                 st.session_state.dilekce_sonucu = None
                                 st.rerun()
         else:
