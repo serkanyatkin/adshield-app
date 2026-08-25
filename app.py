@@ -219,10 +219,10 @@ def get_working_model(system_instruction=None):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
-# --- İNTERAKTİF ASİSTAN VE DİLEKÇE İÇİN GÜVENLİ OLUŞTURUCU ---
+# --- İNTERAKTİF ASİSTAN İÇİN ÇOK DAHA TEMİZ KOTA HATA MESAJI ---
 def generate_content_safe(contents, system_instruction=None):
     model = get_working_model(system_instruction=system_instruction)
-    for attempt in range(3):
+    for attempt in range(2):
         try:
             response = model.generate_content(contents)
             if response and response.text:
@@ -230,15 +230,13 @@ def generate_content_safe(contents, system_instruction=None):
             raise Exception("Model boş yanıt döndürdü.")
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
-                if attempt < 2:
-                    match = re.search(r'retry in (\d+\.?\d*)s', err_str)
-                    wait_time = float(match.group(1)) + 3 if match else 35
-                    time.sleep(wait_time)
+            if "429" in err_str or "Quota" in err_str or "free_tier" in err_str.lower():
+                if attempt < 1:
+                    time.sleep(15)
                     continue
-            raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
+            raise Exception("🚨 **API KOTASI DOLDU:** Google ücretsiz hesap limitlerine ulaştınız. Lütfen sisteme yeni bir API Key girin veya kotalarınızın sıfırlanması için bekleyin.")
 
-# --- YENİ NESİL: KENDİNİ OTOMATİK İYİLEŞTİREN VE SAHTE AKIŞ (FAKE-STREAM) YAPAN SENTEZ MOTORU ---
+# --- KENDİNİ OTOMATİK İYİLEŞTİREN SENTEZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -260,36 +258,35 @@ KESİN KURALLAR:
     payload = [single_master_prompt] + contents
     model = get_working_model()
     
-    for attempt in range(3):
+    for attempt in range(2):
         try:
-            # DİKKAT: stream=False yapıyoruz. Hata varsa API anında söylesin diye.
             response = model.generate_content(payload, stream=False)
             
             if response and response.text:
-                # Kendi Fake-Stream (Yapay Akış) motorumuz
                 words = response.text.split(' ')
                 for i in range(0, len(words), 6):
                     yield ' '.join(words[i:i+6]) + ' '
-                    time.sleep(0.04) # Daktilo efekti hissi
-                return # Analiz bittiğinde döngüden komple çık
+                    time.sleep(0.04) 
+                return 
             else:
                 yield "Analiz başlatılamadı. Model boş yanıt döndürdü."
                 return
                 
         except Exception as e:
             err_str = str(e)
-            if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
-                if attempt < 2:
-                    # Google'ın hata mesajından tam süreyi okuyoruz
+            if "429" in err_str or "Quota" in err_str or "free_tier" in err_str.lower():
+                if attempt < 1:
                     match = re.search(r'retry in (\d+\.?\d*)s', err_str)
-                    wait_time = float(match.group(1)) + 3 if match else 45
+                    wait_time = float(match.group(1)) + 2 if match else 20
                     
-                    yield f"\n\n> ⏳ **[Google API Limit Koruması Devrede]** Sistem dakikalık kotaları korumak adına duraklatıldı. Analiz iptal edilmedi, {int(wait_time)} saniye içinde otomatik olarak devam edip ekrana yansıyacaktır. Lütfen sayfayı yenilemeyiniz...\n\n"
-                    
+                    yield f"\n\n> ⏳ **[Google API Limit Koruması Devrede]** Sistem dakikalık kotaları korumak adına duraklatıldı. Analiz iptal edilmedi, {int(wait_time)} saniye içinde otomatik olarak devam edip ekrana yansıyacaktır...\n\n"
                     time.sleep(wait_time)
-                    continue # Süre dolduktan sonra try bloğunu tekrar baştan çalıştır
+                    continue 
+                else:
+                    # Artık 2 denemeden sonra hala 429 alıyorsa açıkça limiti dolduğu uyarısını veriyoruz
+                    yield "\n\n🚨 **API KOTASI TÜKENDİ (429 Hatası):**\nGoogle Free Tier (Ücretsiz Katman) günlük ve dakikalık limitlerinizi tamamen doldurdunuz. Sorun koddan değil, Google'ın hesabınıza uyguladığı engelden kaynaklanmaktadır.\n\n**Çözüm:**\n1. Sol menüdeki ayarlardan farklı bir hesaba ait yepyeni bir Gemini API Key girin.\n2. Veya kotaların sıfırlanması için lütfen daha sonra tekrar deneyin."
+                    return
             
-            # Eğer hata 429 değilse veya 3 deneme de bittiyse gerçek hatayı ver
             yield f"\nSentezleme sırasında kalıcı bir hata oluştu: {err_str}"
             return
 
