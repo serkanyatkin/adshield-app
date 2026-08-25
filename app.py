@@ -305,11 +305,10 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
-# --- HEDEFLİ LİNK VE ÜRÜN DETAY SAYFASI TARAYICISI ---
+# --- ÇOKLU SOSYAL MEDYA & PAZARYERİ RADAR MOTORU ---
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=25"
     
-    # Alakasız giyim, tekstil ve genel kategori kelimelerini eleyen filtre
     YASAKLI_KELIMELER = [
         "elbise", "giyim", "pantolon", "tulum", "etek", "ayakkabi", "ayakkabı", 
         "bluz", "mont", "ceket", "pijama", "sütyen", "sutyen", "külot", "kulot", 
@@ -330,13 +329,12 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
                 url_lower = link.lower()
                 title_lower = title.lower()
                 
-                # Arama ve kategori sayfalarını filtrele
                 if any(x in url_lower for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
                     continue
                 
-                # Alakasız giyim/tekstil sayfalarını filtrele
-                if any(y in url_lower or y in title_lower for y in YASAKLI_KELIMELER):
-                    continue
+                if "instagram" not in url_lower:
+                    if any(y in url_lower or y in title_lower for y in YASAKLI_KELIMELER):
+                        continue
                 
                 link_havuzu.append({
                     "baslik": title,
@@ -348,23 +346,28 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
         return kategori, []
 
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
-    if not api_key_val:
+    if not api_key_val or not urun_adi.strip():
         return {}
     
-    marka_kelimesi = urun_adi.split()[0] if urun_adi else "mamaaura"
+    tam_sorgu = urun_adi.strip()
+    kelimeler = tam_sorgu.split()
+    ana_marka = kelimeler[0]
     
-    # Arama motoru seviyesinde negatif filtre
     negatif_filtre = "-elbise -giyim -pantolon -etek -tulum -ayakkabı -bluz -pijama"
     
+    # 7 Kollu Gelişmiş Radar Matrisi
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{marka_kelimesi}" {negatif_filtre}',
-        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com "{marka_kelimesi}" {negatif_filtre}) OR (site:amazon.com.tr "{marka_kelimesi}" {negatif_filtre})',
-        "🌐 Marka Resmi Web Sitesi Ürünleri": f'site:{marka_domain} "{marka_kelimesi}"' if marka_domain else f'site:mamaaura.com OR site:tr.mamaaura.com',
-        "📱 Instagram Gönderi & Reels İçerikleri": f'site:instagram.com/p/ OR site:instagram.com/reel/ "{marka_kelimesi}"'
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{tam_sorgu}" {negatif_filtre}',
+        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com "{tam_sorgu}" {negatif_filtre}) OR (site:amazon.com.tr "{tam_sorgu}" {negatif_filtre})',
+        "📱 Instagram Reels & Video Akışı": f'(site:instagram.com/reel/ OR site:instagram.com/p/) "{ana_marka}"',
+        "🏷️ Instagram İş Birliği & Örtülü Reklam Radarı": f'site:instagram.com "{ana_marka}" ("#işbirliği" OR "#isbirligi" OR "#reklam" OR "#ortaklık" OR "#sponsor" OR "#hediye" OR "#tanıtım" OR "linki bioya" OR "linki öne çıkanlara" OR "indirim kodu" OR "kupon kodu" OR "hediye edildi")',
+        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & Mucize İddiaları": f'site:instagram.com "{ana_marka}" ("#öncesisonrası" OR "#oncesisonrasi" OR "#beforeafter" OR "#beforeandafter" OR "mucize" OR "tedavi" OR "yok etti" OR "kesin sonuç" OR "çatlak tedavisi" OR "leke tedavisi" OR "garantili" OR "ameliyatsız" OR "klinik sonuç")',
+        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com ("#{ana_marka}kullananlar" OR "#{ana_marka}deneyimi" OR "#{ana_marka}yorum" OR "#{ana_marka}tavsiye" OR "#{ana_marka}inceleme" OR "#{ana_marka}faydaları" OR "#{ana_marka}trend")',
+        "🌐 Marka Resmi Web Sitesi": f'site:{marka_domain} "{tam_sorgu}"' if marka_domain else f'"{ana_marka}" (site:.com OR site:.com.tr)'
     }
     
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=7) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
@@ -949,17 +952,17 @@ Yukarıda arz ve izah edilen nedenlerle; şikayet edilen tarafın 6502 sayılı 
 else:
     with sol_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📡 Hedefli Ürün Linki Avı</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📡 Hedefli Ürün & Sosyal Medya Radarı</div>', unsafe_allow_html=True)
             
-            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: mamaaura çatlak yağı...")
-            radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: mamaaura.com")
+            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: The Purest Solutions leke serumu...")
+            radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: thepurestsolutions.com")
             
-            st.caption("ℹ️ Bu radar; doğrudan tekil ürün satış sayfalarını tarayarak hedef URL havuzunu çıkarır.")
-            radar_tara_butonu = st.button("🚀 Tekil Ürün Linklerini Tespit Et", type="primary")
+            st.caption("ℹ️ Bu radar; tüm pazaryerlerini, resmi web sitesini, Instagram Reels videolarını, örtülü reklamları ve öncesi/sonrası etiketlerini eşzamanlı tarar.")
+            radar_tara_butonu = st.button("🚀 Hedef Linkleri ve İçerikleri Tespit Et", type="primary")
 
     with sag_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📋 Tespit Edilen Tekil Satış Linkleri</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📋 Tespit Edilen Tekil Satış & Sosyal Medya Linkleri</div>', unsafe_allow_html=True)
 
             if radar_tara_butonu:
                 trigger_scroll("top")
@@ -968,13 +971,13 @@ else:
                 elif not radar_urun:
                     st.warning("Lütfen taranacak marka veya ürün adını giriniz.")
                 else:
-                    with st.spinner("Tekil ürün sayfaları ve pazar kanalları taranıyor..."):
+                    with st.spinner("Pazaryerleri, Instagram Reels ve influencer içerikleri taranıyor..."):
                         sonuclar = gelismis_coklu_hedef_taramasi(radar_urun, radar_domain, serpapi_key)
                         st.session_state.radar_link_sonuclari = sonuclar
 
             if st.session_state.radar_link_sonuclari:
                 toplam_link = sum(len(v) for v in st.session_state.radar_link_sonuclari.values())
-                st.success(f"🎯 Toplam **{toplam_link}** adet tekil ürün/satış bağlantısı tespit edildi.")
+                st.success(f"🎯 Toplam **{toplam_link}** adet tekil ürün ve sosyal medya bağlantısı tespit edildi.")
                 
                 alt_sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
                 for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
@@ -987,9 +990,9 @@ else:
                                     st.caption(f"📝 *İçerik İpuçları:* {item['snippet']}")
                                 st.divider()
                         else:
-                            st.warning("Bu kategoride doğrudan tekil ürün sayfası bulunamadı.")
+                            st.warning("Bu kategoride ilgili bağlantı tespit edilemedi.")
             else:
-                st.info("Sol panelden taramayı başlattığınızda tespit edilen tüm tekil Trendyol, Hepsiburada, Amazon ve resmi site ürün linkleri burada listelenecektir.")
+                st.info("Sol panelden taramayı başlattığınızda tespit edilen tüm tekil pazar yeri sayfaları, Instagram Reels videoları ve marka içerikleri burada listelenecektir.")
 
 # ==========================================
 # İNTERAKTİF CHATBOT (MEVZUAT ASİSTANI)
