@@ -209,28 +209,30 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# --- OTOMATİK MODEL BULUCU (DİNAMİK KEŞİF) ---
+# --- GERÇEK DİNAMİK MODEL BULUCU ---
 def get_working_model(system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     genai.configure(api_key=api_key)
     
-    # Öncelikli denenecek kararlı model isimleri
-    preferred = ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro"]
-    for name in preferred:
-        try:
-            return genai.GenerativeModel(model_name=name, system_instruction=system_instruction)
-        except Exception:
-            continue
-            
-    # Eğer öncelikliler hata verirse API üzerinden desteklenen ilk modeli otomatik seç
     try:
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                return genai.GenerativeModel(model_name=m.name, system_instruction=system_instruction)
+                model_name = m.name.replace('models/', '')
+                try:
+                    return genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+                except Exception:
+                    continue
     except Exception:
         pass
         
+    # Son çare sabit genel adlar
+    for fallback in ["gemini-pro", "gemini-flash"]:
+        try:
+            return genai.GenerativeModel(model_name=fallback, system_instruction=system_instruction)
+        except Exception:
+            continue
+            
     raise Exception("Kullanılabilir aktif bir Gemini modeli bulunamadı.")
 
 def generate_content_safe(contents, system_instruction=None):
@@ -933,7 +935,7 @@ Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari 
                                         data=docx_verisi,
                                         file_name=f"Reklam_Kurulu_Sikayet_Dilekcesi_{datetime.now().strftime('%Y%m%d_%H%M')}.docx",
                                         mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-                                        type="primary"
+                                        type="secondary"
                                     )
                                 except Exception as e:
                                     st.warning(f"Word çıktısı uyarısı: {e}")
