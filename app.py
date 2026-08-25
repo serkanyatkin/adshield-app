@@ -209,7 +209,6 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# --- YENİ NESİL MODEL YÖNETİMİ ---
 FAST_MODELS = ["gemini-3.6-flash", "gemini-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
 
 def get_working_model(system_instruction=None):
@@ -254,7 +253,6 @@ def generate_content_safe(contents, system_instruction=None):
             
     raise Exception(f"Model yanıtı alınamadı. Detay: {last_err}")
 
-# --- ÇOKLU ROL SENTEZİ (MULTI-ROLE ENSEMBLING) ANALİZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -369,7 +367,6 @@ def fetch_url_data(url):
         clean_text = f"[Web içeriği çekilemedi: {e}]"
     return clean_text, downloaded_images
 
-# --- LİNK RADAR MOTORU ---
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=40"
     YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sepetim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
@@ -490,7 +487,7 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     secilenler = [k[1] for k in skorlu[:top_k]]
     return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
 
-# --- GÜÇLENDİRİLMİŞ PDF OLUŞTURUCU (Hatasız Regex Korumalı ve Estetik) ---
+# --- GÜÇLENDİRİLMİŞ PDF OLUŞTURUCU (Tam Korumalı) ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -510,11 +507,19 @@ def create_pdf(report_text, baslik_metni):
     
     pdf.set_text_color(0, 0, 0)
     
-    # FPDF'in çökmesini engelleyen ZORUNLU KESME filtresi (Regex)
+    # Kesin Çözüm: Gizli karakter temizleyici ve kelime kırıcı
     def safe_text_for_pdf(txt):
-        # Eğer yan yana 55 adet boşluksuz karakter varsa (örn. uzun bir link veya tire dizisi), 
-        # arasına bir boşluk koyarak FPDF'in alt satıra geçmesine izin verir.
-        return re.sub(r'([^\s]{55})', r'\1 ', txt)
+        # Yapay zekanın üretebildiği gizli boşlukları (NBSP) ve sekmeleri temizle
+        txt = txt.replace('\xa0', ' ').replace('\t', ' ')
+        words = txt.split(' ') # Sadece standart boşluklardan böl
+        safe_words = []
+        for w in words:
+            if len(w) > 55:
+                safe_words.append(" ".join([w[i:i+55] for i in range(0, len(w), 55)]))
+            else:
+                safe_words.append(w)
+        # İki kere boşluk olan yerleri tek boşluğa indirge
+        return re.sub(' +', ' ', " ".join(safe_words))
 
     lines = report_text.split('\n')
     for line in lines:
@@ -525,22 +530,29 @@ def create_pdf(report_text, baslik_metni):
         
         line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
         line_safe = safe_text_for_pdf(line_ascii)
+        
+        # Eğer line sadece boşluklardan ibaret kaldıysa hata vermemesi için geç:
+        if not line_safe.strip():
+            continue
 
         if line.startswith("###") or line.startswith("I.") or line.startswith("II.") or line.startswith("III.") or line.startswith("IV.") or line.startswith("V."):
             pdf.set_font("Helvetica", "B", 12)
             temiz_baslik = line_safe.replace("###", "").replace("**", "").strip()
-            pdf.multi_cell(0, 7, temiz_baslik)
-            pdf.ln(2)
+            if temiz_baslik:
+                pdf.multi_cell(0, 7, temiz_baslik)
+                pdf.ln(2)
             
         elif line.startswith("* **") or line.startswith("- **"):
             pdf.set_font("Helvetica", "B", 11)
             temiz_alt = line_safe.replace("**", "").replace("* ", "").replace("- ", "").strip()
-            pdf.multi_cell(0, 6, temiz_alt)
+            if temiz_alt:
+                pdf.multi_cell(0, 6, temiz_alt)
             
         else:
             pdf.set_font("Helvetica", "", 11)
             temiz_satir = line_safe.replace("**", "").replace("*", "").strip()
-            pdf.multi_cell(0, 6, temiz_satir)
+            if temiz_satir:
+                pdf.multi_cell(0, 6, temiz_satir)
             
     return bytes(pdf.output())
 
