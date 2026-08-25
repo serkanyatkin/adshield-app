@@ -16,7 +16,7 @@ import urllib.parse
 from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
 import textwrap
-import time  # <-- YENİ: API Hız Sınırı Koruması İçin
+import time
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -219,21 +219,37 @@ def get_working_model(system_instruction=None):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
+# --- YENİ: AKILLI BEKLEME (RETRY) KALKANI ---
+def call_api_with_retry(model, payload, stream=False):
+    """Google 429 Limit Hatası atarsa çökmek yerine 25 saniye bekler ve tekrar dener."""
+    for attempt in range(3):
+        try:
+            if stream:
+                return model.generate_content(payload, stream=True)
+            else:
+                return model.generate_content(payload)
+        except Exception as e:
+            err_str = str(e)
+            if "429" in err_str or "Quota" in err_str or "exhausted" in err_str.lower():
+                if attempt < 2:
+                    time.sleep(25)  # Sistemi uyutarak limitin sıfırlanmasını bekle
+                    continue
+            raise e
+    raise Exception("Google API limitleri aşıldı ve tekrar denemeler başarısız oldu.")
+
 def generate_content_safe(contents, system_instruction=None):
     try:
         model = get_working_model(system_instruction=system_instruction)
-        response = model.generate_content(contents)
+        response = call_api_with_retry(model, contents, stream=False)
         if response and response.text:
             return response.text
         raise Exception("Model boş yanıt döndürdü.")
     except Exception as e:
         raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
 
-# --- API LİMİT KORUMALI ÇOKLU ROL SENTEZİ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
-    genai.configure(api_key=api_key)
     
     prompt_p1 = f"{system_instruction_base}\n\nROL 1: KATI MEVZUAT BAŞDENETÇİSİ.\nGöreviniz, materyali 6502 sayılı Kanun, Ticari Reklam Yönetmeliği ve TİTCK kılavuzlarına göre en sert ve acımasız şekilde incelemek; mevzuata aykırı tüm ifadeleri, gizli sağlık beyanlarını ve ispat yükümlülüğü açıklarını tek tek tespit etmektir."
     prompt_p2 = f"{system_instruction_base}\n\nROL 2: KIDEMLİ HAKSIZ REKABET VE TÜKETİCİ HUKUKU AVUKATI.\nGöreviniz, materyali ticari etki, haksız rekabet, tüketiciyi yanıltma algısı ve Reklam Kurulu nezdinde emsal oluşturacak argümanlar açısından değerlendirmektir."
@@ -244,13 +260,12 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     try:
         model = get_working_model()
         
-        # 1. Sorgu ve Bekleme
-        r1 = model.generate_content(payload_1)
-        time.sleep(3)  # API Hız Sınırı (429) Koruma Molası
+        # 1. Sorgu (Koruma Kalkanlı)
+        r1 = call_api_with_retry(model, payload_1, stream=False)
+        time.sleep(2) # Modeller arası ufak nefes payı
         
-        # 2. Sorgu ve Bekleme
-        r2 = model.generate_content(payload_2)
-        time.sleep(3)  # API Hız Sınırı (429) Koruma Molası
+        # 2. Sorgu (Koruma Kalkanlı)
+        r2 = call_api_with_retry(model, payload_2, stream=False)
         
         if r1 and r1.text and r2 and r2.text:
             analysis_1 = r1.text
@@ -259,7 +274,7 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
             yield f"Analiz başlatılamadı. Model ({TARGET_MODEL}) eksik yanıt döndürdü."
             return
     except Exception as e:
-        yield f"Analiz başlatılamadı. Lütfen model limitlerinizi kontrol edin. Hata: {e}"
+        yield f"Analiz başlatılamadı. Hata: {e}"
         return
 
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
@@ -281,12 +296,13 @@ KESİN KURALLAR:
 3. Raporu okuyan kişiyi yormayacak, şık ve ferah bir Markdown düzeni (kalın başlıklar, düzgün listeler) kullan.
 """
     try:
-        response = model.generate_content(synthesis_prompt, stream=True)
+        # Sentez Yayın Akışı (Koruma Kalkanlı)
+        response = call_api_with_retry(model, synthesis_prompt, stream=True)
         for chunk in response:
             if chunk.text:
                 yield chunk.text
     except Exception as e:
-        yield f"Sentezleme sırasında hata oluştu: {e}"
+        yield f"\n\nSentezleme sırasında hata oluştu: {e}"
 
 def download_single_img(url, headers):
     try:
@@ -436,6 +452,7 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
+# --- YENİ: L'OREAL'İ ENGELLEYEN VE PUANLAYAN EMSAL MOTORU ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi.", []
@@ -449,13 +466,20 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     if metin:
         anahtarlar.update(re.findall(r'\b\w{3,}\b', metin.lower())[:8])
     skorlu = []
+    
     for karar in karar_arsivi:
         k_lower = karar.lower()
         skor = sum(k_lower.count(k) * 2 for k in anahtarlar)
         if "idari para" in k_lower or "durdurma" in k_lower or "dosya no" in k_lower:
             skor += 4
+            
+        # L'Oreal ve La Roche takıntısını kırmak için negatif puanlama
+        if "l'oreal" in k_lower or "la roche" in k_lower:
+            skor -= 50
+            
         if skor > 0:
             skorlu.append((skor, karar[:1200])) # LLM için özet uzunluğu
+            
     skorlu.sort(key=lambda x: x[0], reverse=True)
     
     secilenler_metin = [k[1] for k in skorlu[:top_k]]
@@ -624,7 +648,7 @@ def create_docx(dilekce_text):
     docx_io.seek(0)
     return docx_io.getvalue()
 
-# Session State
+# Session State Tanımları
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
@@ -807,7 +831,7 @@ RAPOR FORMATI:
                     rapor_alani = st.empty()
                     try:
                         tam_rapor = ""
-                        with st.spinner("Çoklu Rol Sentezi (Başdenetçi + Hukuk Müşaviri) ile analiz yapılıyor..."):
+                        with st.spinner("Çoklu Rol Sentezi (Başdenetçi + Hukuk Müşaviri) ile analiz yapılıyor... Lütfen bekleyiniz."):
                             for parca in generate_multi_role_synthesis_stream(icerik_listesi, base_prompt, is_danisan):
                                 tam_rapor += parca
                                 rapor_alani.markdown(tam_rapor + "▌")
@@ -817,7 +841,7 @@ RAPOR FORMATI:
                         st.session_state.chat_history = []
                         st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
                     except Exception as err:
-                        st.error(f"Analiz sırasında bir hata oluştu: {err}")
+                        st.error(f"Sistem Hatası: {err}")
 
             if st.session_state.rapor_sonucu:
                 if is_danisan:
