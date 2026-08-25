@@ -309,56 +309,77 @@ def fetch_url_data(url):
 def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=40"
     
-    YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
+    YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sepetim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
     YASAKLI_GIYIM = ["elbise", "pantolon", "etek", "tulum", "ayakkabi", "ayakkabı", "bluz", "pijama", "sütyen", "külot", "triko", "kazak"]
     
     try:
         response = requests.get(url, timeout=7)
         data = response.json()
         link_havuzu = []
+        
+        raw_items = []
+        # 1. Standart Arama Sonuçları
         if "organic_results" in data:
-            for result in data["organic_results"]:
-                link = result.get("link", "")
-                title = result.get("title", "Başlık Belirtilmemiş")
-                snippet = result.get("snippet", "")
-                
-                url_lower = link.lower()
-                title_lower = title.lower()
-                snippet_lower = snippet.lower()
-                
-                # 1. Genel arama/giriş sayfalarını ele
-                if any(yd in url_lower for yd in YASAKLI_DIZINLER):
-                    continue
-                
-                # 2. Instagram dışındaki kanallarda alakasız tekstil/giyim ürünlerini ele
-                if "instagram.com" not in url_lower:
-                    if any(yg in url_lower or yg in title_lower for yg in YASAKLI_GIYIM):
-                        continue
-
-                # 3. Trendyol Doğrulaması (Yalnızca tekil -p- sayfaları)
-                if "trendyol.com" in url_lower:
-                    if "-p-" not in url_lower:
-                        continue
-                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower and ana_marka_slug not in snippet_lower):
-                        continue
-
-                # 4. Hepsiburada Doğrulaması (Arama ve kategori sayfalarını ele)
-                if "hepsiburada.com" in url_lower:
-                    if any(c in url_lower for c in ["/ara?", "/kategori/"]):
-                        continue
-                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower and ana_marka_slug not in snippet_lower):
-                        continue
-
-                # 5. Amazon Türkiye Doğrulaması (Tekil ürün /dp/ kontrolü)
-                if "amazon.com.tr" in url_lower:
-                    if "/dp/" not in url_lower and "/gp/product/" not in url_lower:
-                        continue
-
-                link_havuzu.append({
-                    "baslik": title,
-                    "url": link,
-                    "snippet": snippet
+            raw_items.extend(data["organic_results"])
+        
+        # 2. Google Alışveriş ve Ürün Kartları
+        if "shopping_results" in data:
+            for s in data["shopping_results"]:
+                raw_items.append({
+                    "link": s.get("link") or s.get("product_link", ""),
+                    "title": s.get("title", "Alışveriş Ürün Kartı"),
+                    "snippet": f"Fiyat: {s.get('price', '')} - Satıcı: {s.get('source', '')}"
                 })
+        
+        if "inline_shopping_results" in data:
+            for s in data["inline_shopping_results"]:
+                raw_items.append({
+                    "link": s.get("link", ""),
+                    "title": s.get("title", "Ürün Vitrini"),
+                    "snippet": s.get("price", "")
+                })
+
+        for result in raw_items:
+            link = result.get("link", "")
+            title = result.get("title", "Başlık Belirtilmemiş")
+            snippet = result.get("snippet", "")
+            
+            if not link or not link.startswith("http"):
+                continue
+            
+            url_lower = link.lower()
+            title_lower = title.lower()
+            
+            # 1. Genel arama/giriş sayfalarını filtrele
+            if any(yd in url_lower for yd in YASAKLI_DIZINLER):
+                continue
+            
+            # 2. Instagram dışındaki kanallarda giyim/tekstil ürünlerini ele
+            if "instagram.com" not in url_lower:
+                if any(yg in url_lower or yg in title_lower for yg in YASAKLI_GIYIM):
+                    continue
+
+            # 3. Trendyol Doğrulaması
+            if "trendyol.com" in url_lower:
+                if "-p-" not in url_lower and "/pd/" not in url_lower:
+                    continue
+
+            # 4. Hepsiburada Doğrulaması
+            if "hepsiburada.com" in url_lower:
+                if any(c in url_lower for c in ["/ara?", "/kategori/"]):
+                    continue
+
+            # 5. Amazon Türkiye Doğrulaması
+            if "amazon.com.tr" in url_lower:
+                if "/dp/" not in url_lower and "/gp/product/" not in url_lower:
+                    continue
+
+            link_havuzu.append({
+                "baslik": title,
+                "url": link,
+                "snippet": snippet
+            })
+            
         return kategori, link_havuzu
     except Exception:
         return kategori, []
@@ -379,14 +400,14 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     
     # 8 Kollu Bağımsız ve Temiz Radar Matrisi
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{ana_marka}"',
-        "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com "{ana_marka}"',
-        "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr "{ana_marka}"',
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com {ana_marka}',
+        "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com {ana_marka}',
+        "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr {ana_marka}',
         "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain}' if temiz_domain else f'"{ana_marka}" (site:.com OR site:.com.tr)',
-        "📱 Instagram Reels & Video Akışı": f'site:instagram.com "{ana_marka}" (inurl:reel OR inurl:/p/)',
-        "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com "{ana_marka}" (işbirliği OR reklam OR sponsor OR hediye OR "#işbirliği" OR "#reklam" OR "indirim kodu")',
-        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com "{ana_marka}" ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR "çatlak" OR "leke" OR "sonuç")',
-        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com "{ana_marka}" (kullananlar OR deneyim OR tavsiye OR yorum OR inceleme)'
+        "📱 Instagram Reels & Video Akışı": f'site:instagram.com {ana_marka}',
+        "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com {ana_marka} (işbirliği OR reklam OR sponsor OR hediye OR "#işbirliği" OR "#reklam")',
+        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com {ana_marka} ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR çatlak OR leke OR bebek)',
+        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com {ana_marka} (kullananlar OR deneyim OR tavsiye OR yorum OR inceleme)'
     }
     
     kategorize_sonuclar = {}
