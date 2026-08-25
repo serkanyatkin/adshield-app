@@ -308,6 +308,15 @@ def fetch_url_data(url):
 # --- HEDEFLİ LİNK VE ÜRÜN DETAY SAYFASI TARAYICISI ---
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=25"
+    
+    # Alakasız giyim, tekstil ve genel kategori kelimelerini eleyen filtre
+    YASAKLI_KELIMELER = [
+        "elbise", "giyim", "pantolon", "tulum", "etek", "ayakkabi", "ayakkabı", 
+        "bluz", "mont", "ceket", "pijama", "sütyen", "sutyen", "külot", "kulot", 
+        "kombin", "tisort", "tişört", "terlik", "çanta", "canta", "aksesuar",
+        "gecelik", "tayt", "şort", "sort", "triko", "kazak"
+    ]
+    
     try:
         response = requests.get(url, timeout=6)
         data = response.json()
@@ -318,8 +327,15 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
                 title = result.get("title", "Başlık Belirtilmemiş")
                 snippet = result.get("snippet", "")
                 
+                url_lower = link.lower()
+                title_lower = title.lower()
+                
                 # Arama ve kategori sayfalarını filtrele
-                if any(x in link.lower() for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
+                if any(x in url_lower for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
+                    continue
+                
+                # Alakasız giyim/tekstil sayfalarını filtrele
+                if any(y in url_lower or y in title_lower for y in YASAKLI_KELIMELER):
                     continue
                 
                 link_havuzu.append({
@@ -337,10 +353,12 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     
     marka_kelimesi = urun_adi.split()[0] if urun_adi else "mamaaura"
     
-    # Hatalı inurl:-p- operatörü kaldırıldı, doğrudan platform ürün listelemelerine odaklanıldı
+    # Arama motoru seviyesinde negatif filtre
+    negatif_filtre = "-elbise -giyim -pantolon -etek -tulum -ayakkabı -bluz -pijama"
+    
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{marka_kelimesi}"',
-        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com "{marka_kelimesi}") OR (site:amazon.com.tr "{marka_kelimesi}")',
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{marka_kelimesi}" {negatif_filtre}',
+        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com "{marka_kelimesi}" {negatif_filtre}) OR (site:amazon.com.tr "{marka_kelimesi}" {negatif_filtre})',
         "🌐 Marka Resmi Web Sitesi Ürünleri": f'site:{marka_domain} "{marka_kelimesi}"' if marka_domain else f'site:mamaaura.com OR site:tr.mamaaura.com',
         "📱 Instagram Gönderi & Reels İçerikleri": f'site:instagram.com/p/ OR site:instagram.com/reel/ "{marka_kelimesi}"'
     }
