@@ -210,32 +210,14 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# --- YENİ NESİL KESİN DİNAMİK MODEL YÖNETİMİ ---
-@st.cache_resource(ttl=3600)
-def get_best_model_name(key):
-    genai.configure(api_key=key)
-    try:
-        models = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                models.append(m.name.replace('models/', ''))
-
-        # Senin hesabında açık olan ilk güçlü modeli seçiyoruz
-        for pref in ["gemini-1.5-flash", "gemini-1.5-pro", "gemini-pro", "gemini-1.0-pro"]:
-            if pref in models:
-                return pref
-                
-        if models:
-            return models[0]
-    except Exception:
-        pass
-    return "gemini-1.5-flash"
+# --- KESİN VE SABİT MODEL TANIMI (API'NİN İSTEDİĞİ SON SÜRÜM) ---
+TARGET_MODEL = "gemini-3.6-flash"
 
 def get_working_model(system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
-    m_name = get_best_model_name(api_key)
-    return genai.GenerativeModel(model_name=m_name, system_instruction=system_instruction)
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
 def generate_content_safe(contents, system_instruction=None):
     try:
@@ -243,14 +225,14 @@ def generate_content_safe(contents, system_instruction=None):
         response = model.generate_content(contents)
         if response and response.text:
             return response.text
+        raise Exception("Model boş yanıt döndürdü.")
     except Exception as e:
-        raise Exception(f"Model yanıtı alınamadı. Detay: {e}")
-    raise Exception("Model yanıtı boş döndü.")
+        raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
 
-# --- ÇOKLU ROL SENTEZİ (MULTI-ROLE ENSEMBLING) ANALİZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
+    genai.configure(api_key=api_key)
     
     prompt_p1 = f"{system_instruction_base}\n\nROL 1: KATI MEVZUAT BAŞDENETÇİSİ.\nGöreviniz, materyali 6502 sayılı Kanun, Ticari Reklam Yönetmeliği ve TİTCK kılavuzlarına göre en sert ve acımasız şekilde incelemek; mevzuata aykırı tüm ifadeleri, gizli sağlık beyanlarını ve ispat yükümlülüğü açıklarını tek tek tespit etmektir."
     prompt_p2 = f"{system_instruction_base}\n\nROL 2: KIDEMLİ HAKSIZ REKABET VE TÜKETİCİ HUKUKU AVUKATI.\nGöreviniz, materyali ticari etki, haksız rekabet, tüketiciyi yanıltma algısı ve Reklam Kurulu nezdinde emsal oluşturacak argümanlar açısından değerlendirmektir."
@@ -267,10 +249,10 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
             analysis_1 = r1.text
             analysis_2 = r2.text
         else:
-            yield "Analiz başlatılamadı. Model boş yanıt döndürdü."
+            yield f"Analiz başlatılamadı. Model ({TARGET_MODEL}) eksik yanıt döndürdü."
             return
     except Exception as e:
-        yield f"Analiz başlatılamadı. Lütfen model izinlerinizi kontrol edin. Hata: {e}"
+        yield f"Analiz başlatılamadı. Lütfen model limitlerinizi kontrol edin. Hata ({TARGET_MODEL}): {e}"
         return
 
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
@@ -849,7 +831,6 @@ RAPOR FORMATI:
                     except Exception as e:
                         st.warning(f"PDF uyarısı: {e}")
 
-                    # --- EMSAL KARARLAR AÇILIR PENCERESİ (İç Denetim Modu) ---
                     if st.session_state.kullanilan_emsaller:
                         st.write("")
                         st.markdown('<div class="section-heading" lang="tr">📚 Raporda Atıf Yapılan Emsal Kararların Orijinal Metinleri</div>', unsafe_allow_html=True)
@@ -883,7 +864,6 @@ RAPOR FORMATI:
                         except Exception as e:
                             st.warning(f"PDF uyarısı: {e}")
                         
-                        # --- EMSAL KARARLAR AÇILIR PENCERESİ (Rakip Denetim Modu) ---
                         if st.session_state.kullanilan_emsaller:
                             st.write("")
                             st.markdown('<div class="section-heading" lang="tr">📚 Raporda Atıf Yapılan Emsal Kararların Orijinal Metinleri</div>', unsafe_allow_html=True)
