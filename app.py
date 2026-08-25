@@ -209,30 +209,14 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-@st.cache_resource(show_spinner=False)
-def get_active_models(current_api_key):
-    fallback = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
-    if not current_api_key:
-        return fallback
-    try:
-        genai.configure(api_key=current_api_key)
-        available = []
-        for m in genai.list_models():
-            if 'generateContent' in m.supported_generation_methods:
-                available.append(m.name.replace("models/", ""))
-        if available:
-            return [m for m in available if "flash" in m] + [m for m in available if "flash" not in m]
-    except Exception:
-        pass
-    return fallback
+FAST_MODELS = ["gemini-1.5-flash", "gemini-2.5-flash", "gemini-1.5-pro"]
 
 def generate_stream_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı tanımlanmadı.")
     genai.configure(api_key=api_key)
-    models_to_try = get_active_models(api_key)
     last_err = None
-    for model_name in models_to_try:
+    for model_name in FAST_MODELS:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents, stream=True)
@@ -249,9 +233,8 @@ def generate_content_safe(contents, system_instruction=None):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
     genai.configure(api_key=api_key)
-    models_to_try = get_active_models(api_key)
     last_err = None
-    for model_name in models_to_try:
+    for model_name in FAST_MODELS:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
             response = model.generate_content(contents)
@@ -264,7 +247,7 @@ def generate_content_safe(contents, system_instruction=None):
 
 def download_single_img(url, headers):
     try:
-        res = requests.get(url, headers=headers, timeout=3)
+        res = requests.get(url, headers=headers, timeout=2.5)
         if res.status_code == 200 and len(res.content) > 3000:
             pil_img = Image.open(io.BytesIO(res.content))
             return optimize_image(pil_img)
@@ -286,7 +269,7 @@ def fetch_url_data(url):
     }
     
     try:
-        res = requests.get(url.strip(), headers=headers, timeout=4)
+        res = requests.get(url.strip(), headers=headers, timeout=3)
         if res.status_code == 200:
             try:
                 from bs4 import BeautifulSoup
@@ -322,18 +305,27 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
+# --- HEDEFLİ LİNK VE ÜRÜN DETAY SAYFASI TARAYICISI ---
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
-    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=10"
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
     try:
         response = requests.get(url, timeout=5)
         data = response.json()
         link_havuzu = []
         if "organic_results" in data:
             for result in data["organic_results"]:
+                link = result.get("link", "")
+                title = result.get("title", "Başlık Belirtilmemiş")
+                snippet = result.get("snippet", "")
+                
+                # Arama ve kategori sayfalarını ele, doğrudan tekil ürün sayfalarına odaklan
+                if any(x in link for x in ["/sr?q=", "/ara?q=", "/search?q=", "/kategori/", "/butik/"]):
+                    continue
+                
                 link_havuzu.append({
-                    "baslik": result.get("title", "Başlık Belirtilmemiş"),
-                    "url": result.get("link", "#"),
-                    "snippet": result.get("snippet", "")
+                    "baslik": title,
+                    "url": link,
+                    "snippet": snippet
                 })
         return kategori, link_havuzu
     except Exception:
@@ -342,18 +334,30 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val:
         return {}
+    
+    # Marka kök adını çıkar (örn: "mamaaura" çatlak yağı -> marka="mamaaura")
+    marka_kelimesi = urun_adi.split()[0] if urun_adi else "mamaaura"
+    
     queries = {
-        "🌐 Resmi Web Sitesi": f'"{urun_adi}" site:{marka_domain}' if marka_domain else f'"{urun_adi}"',
-        "🛒 Pazaryerleri (Trendyol & Hepsiburada)": f'"{urun_adi}" site:trendyol.com OR site:hepsiburada.com',
-        "📱 Sosyal Medya (Instagram)": f'"{urun_adi}" site:instagram.com'
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com inurl:-p- "{marka_kelimesi}"',
+        "🛍️ Hepsiburada & Amazon Tekil Ürünler": f'(site:hepsiburada.com inurl:-p- OR site:hepsiburada.com inurl:-pm- OR site:amazon.com.tr inurl:/dp/) "{marka_kelimesi}"',
+        "🌐 Marka Resmi Web Sitesi Ürünleri": f'(site:{marka_domain} OR site:tr.{marka_domain}) "{marka_kelimesi}"' if marka_domain else f'site:mamaaura.com OR site:tr.mamaaura.com "{marka_kelimesi}"',
+        "📱 Instagram Gönderi & Reels İçerikleri": f'site:instagram.com/p/ OR site:instagram.com/reel/ "{marka_kelimesi}"'
     }
     
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=3) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
-            kategorize_sonuclar[kat] = sonuclar
+            # Tekilleştirme
+            gorulenler = set()
+            tekil_list = []
+            for item in sonuclar:
+                if item["url"] not in gorulenler:
+                    gorulenler.add(item["url"])
+                    tekil_list.append(item)
+            kategorize_sonuclar[kat] = tekil_list
             
     return kategorize_sonuclar
 
@@ -449,7 +453,6 @@ def create_pdf(report_text, baslik_metni):
 
     return bytes(pdf.output())
 
-# Resmi Word (.docx) Formatı Üreticisi
 def create_docx(dilekce_text):
     doc = docx.Document()
     
@@ -590,7 +593,7 @@ if "rakip_gorunum" not in st.session_state:
 if "radar_link_sonuclari" not in st.session_state:
     st.session_state.radar_link_sonuclari = None
 
-# Mod Seçimi (3 Modlu Yapı)
+# Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
 
 mod_secimi = st.radio(
@@ -598,7 +601,7 @@ mod_secimi = st.radio(
     [
         "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)",
         "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)",
-        "360° Çoklu Satıcı ve Pazar Radarı (Piyasa Taraması & Link Avı)"
+        "360° Çoklu Satıcı ve Pazar Radarı (Hedefli Ürün Linki Tespiti)"
     ],
     horizontal=True,
     label_visibility="collapsed"
@@ -607,7 +610,6 @@ mod_secimi = st.radio(
 is_danisan = "İç Denetim" in mod_secimi
 is_radar = "360° Çoklu Satıcı" in mod_secimi
 
-# Panel Düzeni
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
 # ==========================================
@@ -766,7 +768,6 @@ RAPOR FORMATI:
                     except Exception as err:
                         st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
-            # Rapor & Dilekçe Alanı
             if st.session_state.rapor_sonucu:
                 if is_danisan:
                     with st.container(height=450):
@@ -926,125 +927,58 @@ Yukarıda arz ve izah edilen nedenlerle; şikayet edilen tarafın 6502 sayılı 
                 st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
 
 # ==========================================
-# MOD 3: 360° ÇOKLU SATICI VE PAZAR RADARI
+# MOD 3: 360° ÇOKLU SATICI VE PAZAR RADARI (LİNK ODAKLI)
 # ==========================================
 else:
     with sol_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📡 Pazar Taraması Parametreleri</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📡 Hedefli Ürün Linki Avı</div>', unsafe_allow_html=True)
             
-            radar_urun = st.text_input("Hedef Ürün Adı / Sorgu", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: mamaaura çatlak yağı...")
-            radar_domain = st.text_input("Markanın Resmi Web Sitesi (Opsiyonel)", value="mamaaura.com", placeholder="Örn: mamaaura.com")
+            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: mamaaura çatlak yağı...")
+            radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: mamaaura.com")
             
-            radar_sektor = st.selectbox("Faaliyet Sektörü", [
-                "Kozmetik & Kişisel Bakım / Anne-Bebek",
-                "Takviye Edici Gıda & Sağlık",
-                "E-Ticaret & İndirim Kampanyaları",
-                "Sosyal Medya & Influencer Reklamları",
-                "Diğer"
-            ], key="radar_sektor_box")
-
-            st.caption("ℹ️ Bu radar; bot güvenlik duvarlarına takılmadan pazar yerlerini, resmi web sitesini ve Instagram kanallarını eşzamanlı tarayarak hedef link havuzunu çıkarır.")
-            radar_tara_butonu = st.button("🚀 Pazar Radarı & Hukuki Analizi Başlat", type="primary")
+            st.caption("ℹ️ Bu radar; doğrudan tekil ürün satış sayfalarını (`-p-`, `/dp/`, `/reel/`) tarayarak hedef URL havuzunu çıkarır.")
+            radar_tara_butonu = st.button("🚀 Tekil Ürün Linklerini Tespit Et", type="primary")
 
     with sag_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📊 360° Çoklu Pazar ve İhlal Raporu</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📋 Tespit Edilen Tekil Satış Linkleri</div>', unsafe_allow_html=True)
 
             if radar_tara_butonu:
                 trigger_scroll("top")
                 if not serpapi_key:
                     st.error("SerpApi API Key bulunamadı. Lütfen Streamlit Secrets ayarlarınızı kontrol ediniz.")
                 elif not radar_urun:
-                    st.warning("Lütfen taranacak ürün adını giriniz.")
+                    st.warning("Lütfen taranacak marka veya ürün adını giriniz.")
                 else:
-                    with st.spinner("Pazar yerleri ve web kanalları paralel olarak taranıyor..."):
+                    with st.spinner("Tekil ürün sayfaları ve pazar kanalları taranıyor..."):
                         sonuclar = gelismis_coklu_hedef_taramasi(radar_urun, radar_domain, serpapi_key)
                         st.session_state.radar_link_sonuclari = sonuclar
-                    
-                    # Gemini Pro Analizi
-                    dossier_metni = ""
-                    for kat, linkler in sonuclar.items():
-                        dossier_metni += f"\n\n=== [KATEGORİ: {kat}] ===\n"
-                        for l in linkler:
-                            dossier_metni += f"- Başlık: {l['baslik']}\n  URL: {l['url']}\n  Snippet: {l['snippet']}\n"
-                    
-                    ilgili_emsaller = get_relevant_emsaller(dossier_metni, radar_sektor)
-                    
-                    radar_prompt = f"""
-SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
-Canlı pazar taraması sonucunda elde edilen link ve metin havuzunu inceleyerek kapsamlı bir 360° ÇOKLU SATICI VE PAZAR RİSK RAPORU hazırla.
-
-=== EMSAL REKLAM KURULU İÇTİHATLARI ===
-{ilgili_emsaller}
-=======================================
-
-TARANAN ÜRÜN: {radar_urun}
-SEKTÖR: {radar_sektor}
-PAZAR VERİLERİ:
-{dossier_metni}
-
-RAPOR FORMATI:
-### [GENEL PAZAR RİSK DERECESİ: YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
-
-### I. TESPİT EDİLEN SATICI, PAZARYERİ VE KANAL LİNKLERİ
-(Taranan tüm kategorilerdeki önemli linkleri ve satıcı kanallarını özetle)
-
-### II. TİTCK VE REKLAM KURULU MEVZUATINA AYKIRILIK TESPİTİ
-* **Kozmetik/Sağlık İhlalleri:** (Endikasyon, tedavi edici algı, çatlak/selülit yok etme iddiaları)
-* **Pazaryeri & Satıcı Çeşitliliği İncelemesi:**
-
-### III. REKLAM KURULU EMSAL İÇTİHATLARI VE YAPTIRIM RİSKİ
-* **Emsal Kararlar:** (Dosya No, ceza gerekçesi ve 6502 m. 77 uyarınca yaptırımlar)
-
-### IV. HUKUKİ EYLEM PLANI VE ÖNERİLER
-* **Müvekkil/Marka Açısından Koruyucu Tedbirler**
-
-### V. YASAL ŞERH
-"Bu rapor teknik bir ön risk analizi niteliğinde olup, nihai hukuki mütalaa yerine geçmez."
-"""
-                    rapor_alani = st.empty()
-                    try:
-                        tam_rapor = ""
-                        with st.spinner("Gemini Pro hukuki risk analizini hazırlıyor..."):
-                            for parca in generate_stream_safe([radar_prompt]):
-                                tam_rapor += parca
-                                rapor_alani.markdown(tam_rapor + "▌")
-                        rapor_alani.empty()
-                        st.session_state.rapor_sonucu = tam_rapor
-                        st.session_state.chat_history = []
-                    except Exception as e:
-                        st.error(f"Analiz sırasında hata oluştu: {e}")
 
             if st.session_state.radar_link_sonuclari:
-                with st.expander("🔗 Taranan Bağlantı Havuzunu Görüntüle", expanded=False):
-                    for kat, links in st.session_state.radar_link_sonuclari.items():
-                        st.markdown(f"**{kat}** ({len(links)} link)")
-                        for l in links:
-                            st.markdown(f"- [{l['baslik']}]({l['url']})")
-
-            if st.session_state.rapor_sonucu and is_radar:
-                with st.container(height=450):
-                    st.markdown(st.session_state.rapor_sonucu)
+                toplam_link = sum(len(v) for v in st.session_state.radar_link_sonuclari.values())
+                st.success(f"🎯 Toplam **{toplam_link}** adet tekil ürün/satış bağlantısı tespit edildi.")
                 
-                try:
-                    pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - 360 Coklu Satici Risk Raporu")
-                    st.download_button(
-                        label="360° Pazar Risk Raporunu İndir (PDF)",
-                        data=pdf_verisi,
-                        file_name=f"AdShield_Pazar_Radari_Raporu_{datetime.now().strftime('%Y%m%d_%H%M')}.pdf",
-                        mime="application/pdf",
-                        type="secondary"
-                    )
-                except Exception as e:
-                    st.warning(f"PDF uyarısı: {e}")
-            elif not st.session_state.rapor_sonucu and is_radar:
-                st.info("Sol panelden hedef ürün parametrelerini girip analizi başlattığınızda 360° pazar raporu burada oluşturulacaktır.")
+                # Sekmeler halinde ürün linklerini göster
+                alt_sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
+                for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
+                    with alt_sekmeler[i]:
+                        if len(links) > 0:
+                            for idx, item in enumerate(links, 1):
+                                st.markdown(f"**{idx}. [{item['baslik']}]({item['url']})**")
+                                st.caption(f"🔗 `{item['url']}`")
+                                if item['snippet']:
+                                    st.caption(f"📝 *İçerik İpuçları:* {item['snippet']}")
+                                st.divider()
+                        else:
+                            st.warning("Bu kategoride doğrudan tekil ürün sayfası bulunamadı.")
+            else:
+                st.info("Sol panelden taramayı başlattığınızda tespit edilen tüm tekil Trendyol, Hepsiburada, Amazon ve resmi site ürün linkleri burada listelenecektir.")
 
 # ==========================================
 # İNTERAKTİF CHATBOT (MEVZUAT ASİSTANI)
 # ==========================================
-if st.session_state.rapor_sonucu:
+if st.session_state.rapor_sonucu and not is_radar:
     st.write("")
     with st.container(border=True):
         st.markdown('<div class="section-heading" lang="tr">💬 AdShield Mevzuat Asistanı</div>', unsafe_allow_html=True)
