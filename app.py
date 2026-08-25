@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal Tema ve Dinamik Kart Stilleri
+# Kurumsal Tema ve Stiller
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -139,23 +139,14 @@ st.markdown("""
         background-color: #4A5E74 !important;
     }
 
-    /* Ceza ve Risk Bilgi Kartları */
-    .penalty-card {
-        background: #F8FAFC;
-        border: 1px solid #E2E8F0;
-        border-left: 4px solid #5D728B;
-        border-radius: 6px;
-        padding: 12px 16px;
-        margin-bottom: 12px;
-        font-size: 13px;
+    div[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar,
+    div[data-testid="stChatMessageContainer"]::-webkit-scrollbar {
+        width: 6px;
     }
-    .penalty-title {
-        font-weight: 700;
-        color: #1E293B;
-        margin-bottom: 4px;
-        display: flex;
-        align-items: center;
-        gap: 6px;
+    div[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb,
+    div[data-testid="stChatMessageContainer"]::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -177,7 +168,6 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Hızlı Görsel Sıkıştırma
 def optimize_image(img, max_dimension=800):
     img = img.convert("RGB")
     if max(img.size) > max_dimension:
@@ -368,7 +358,7 @@ def create_pdf(report_text, baslik_metni):
 
     return bytes(pdf.output())
 
-# Session State Tanımları
+# Session State
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
@@ -414,27 +404,12 @@ with sol_kolon:
             "Yerel Televizyon / Radyo",
             "Açık Hava (Billboard, Broşür vb.)"
         ])
-
-        # Dinamik 6502 m. 77 Mevzuat Bilgi Kartı
-        ceza_bilgisi = {
-            "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)": "6502 m. 77/12 uyarınca İnternet ortamındaki aykırılıklarda durdurma, içerik çıkarma ve her bir aykırılık için idari para cezası uygulanır.",
-            "Satış Noktası (Eczane/Market Stantları, POS Materyali)": "Satış noktası broşür, afiş ve stant materyallerinde durdurma, satış noktasından toplatma ve idari yaptırım uygulanır.",
-            "Ulusal Televizyon Kanalı": "Ulusal düzeyde yayın yapan televizyon kanalları üzerinden gerçekleşen ihlallerde en üst idari para cezası baremleri uygulanır.",
-            "Yerel Televizyon / Radyo": "Yerel yayın mecralarında durdurma ve yerel ceza tarifeleri tatbik edilir.",
-            "Açık Hava (Billboard, Broşür vb.)": "Açık hava mecralarında reklamı durdurma, afişlerin kaldırılması ve idari para cezası yaptırımı söz konusudur."
-        }
-        st.markdown(f"""
-        <div class="penalty-card">
-            <div class="penalty-title">⚖️ 6502 Sayılı Kanun m. 77 Yaptırım Baremi:</div>
-            {ceza_bilgisi.get(mecra, '')}
-        </div>
-        """, unsafe_allow_html=True)
         
         reklam_url = st.text_input("Web Sayfası / Ürün Linki", placeholder="https://www.site.com/urun veya kampanya adresi...")
         if reklam_url and any(sm in reklam_url.lower() for sm in ["instagram.com", "tiktok.com"]):
             st.info("Sosyal medya linkleri bot erişimine kapalıdır; görsel ve metin üzerinden inceleme yapılacaktır.")
 
-        reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=110, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
+        reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=120, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
         yuklenen_gorseller = st.file_uploader("Reklam Görselleri / Taslaklar (Çoklu Yükleme)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
         
         if yuklenen_gorseller:
@@ -625,14 +600,13 @@ SONUÇ VE İSTEM: (...)
         else:
             st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
 
-# İnteraktif Chatbot Arayüzü + Hızlı Aksiyon Butonları (Chips)
+# İnteraktif Chatbot Arayüzü
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
         st.markdown('<div class="section-heading" lang="tr">💬 AdShield Mevzuat Asistanı</div>', unsafe_allow_html=True)
         st.caption("Raporlanan riskler hakkında detay sorabilir veya aşağıdaki hızlı butonları kullanabilirsiniz:")
 
-        # Hızlı Soru Butonları (Chips)
         c1, c2, c3 = st.columns(3)
         hizli_soru = None
         if c1.button("📌 Revize sloganı Instagram'a uyarla"):
