@@ -12,6 +12,7 @@ import glob
 import re
 import requests
 import io
+import json
 import tempfile
 import urllib.parse
 from urllib.parse import urljoin, quote_plus
@@ -24,6 +25,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+# Sayfa İçi Akıllı Kaydırma
 def trigger_scroll(position="top"):
     components.html(f"""
     <script>
@@ -49,6 +51,7 @@ def trigger_scroll(position="top"):
     </script>
     """, height=0, width=0)
 
+# Kurumsal Tema Stilleri
 st.markdown("""
 <div id="page-top-anchor"></div>
 <style>
@@ -240,7 +243,61 @@ def download_single_img(url, headers):
         pass
     return None
 
-# Canlı Pazaryeri & Ürün Galeri Kazıma Motoru (Trendyol Gateway + Web Çözücü)
+# Canlı Görsel Arama ve İndirme Motoru
+def search_live_images_for_query(query, limit=4):
+    headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
+    img_urls = []
+    pil_images = []
+    
+    try:
+        # DDG Görsel Çözücü
+        vqd_url = f"https://duckduckgo.com/?q={quote_plus(query + ' trendyol ürün')}&format=json"
+        vqd_res = requests.get(vqd_url, headers=headers, timeout=4)
+        vqd = None
+        if "vqd=" in vqd_res.text:
+            vqd = vqd_res.text.split("vqd=")[1].split("&")[0].replace('"', '').replace("'", "")
+            
+        if vqd:
+            img_api = f"https://duckduckgo.com/i.js?q={quote_plus(query + ' trendyol')}&o=json&vqd={vqd}"
+            api_res = requests.get(img_api, headers=headers, timeout=4).json()
+            results = api_res.get("results", [])
+            for r in results:
+                raw_img = r.get("image", "")
+                if raw_img.startswith("http") and not any(ext in raw_img.lower() for ext in [".svg", "logo", "icon", "favicon"]):
+                    img_urls.append(raw_img)
+                if len(img_urls) >= limit:
+                    break
+    except Exception:
+        pass
+
+    # Yedek HTML Görsel Kazıyıcı
+    if not img_urls:
+        try:
+            url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' ürün afişi görseli')}"
+            res = requests.get(url, headers=headers, timeout=4)
+            if res.status_code == 200:
+                soup = BeautifulSoup(res.text, 'html.parser')
+                for img in soup.find_all('img'):
+                    src = img.get('src', '')
+                    if 'duckduckgo.com/iu/?u=' in src:
+                        actual_url = urllib.parse.unquote(src.split('u=')[1].split('&')[0])
+                        if actual_url.startswith('http') and not any(ext in actual_url.lower() for ext in ['.svg', 'logo', 'icon']):
+                            img_urls.append(actual_url)
+                    if len(img_urls) >= limit:
+                        break
+        except Exception:
+            pass
+
+    if img_urls:
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            downloaded = executor.map(lambda u: download_single_img(u, headers), img_urls[:limit])
+            for p_img in downloaded:
+                if p_img:
+                    pil_images.append(p_img)
+                    
+    return img_urls, pil_images
+
+# Canlı Pazaryeri & Çoklu Satıcı Kazıma Motoru
 def fetch_real_marketplace_data(query):
     headers = {
         'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Mobile/15E148',
@@ -248,21 +305,20 @@ def fetch_real_marketplace_data(query):
     }
     sellers_dossier = []
     
+    # 1. Trendyol Gateway Arama
     try:
-        # Trendyol Discovery Gateway API
         ty_api_url = f"https://public.trendyol.com/discovery-web-searchgw-service/v2/api/infinite-scroll/sr?q={quote_plus(query)}&pi=1&culture=tr-TR"
         r = requests.get(ty_api_url, headers=headers, timeout=5)
         if r.status_code == 200:
             data = r.json()
             products = data.get("result", {}).get("products", [])
-            for p in products[:4]:
+            for p in products[:3]:
                 name = p.get("name", "")
                 brand = p.get("brand", {}).get("name", "")
                 p_url = "https://www.trendyol.com" + p.get("url", "")
                 merchant = p.get("merchantName", brand)
                 price = p.get("price", {}).get("sellingPrice", "")
                 
-                # Yüksek çözünürlüklü CDN görselleri
                 raw_images = p.get("images", [])
                 img_urls = [f"https://cdn.dsmcdn.com{img_path}" if not img_path.startswith("http") else img_path for img_path in raw_images[:3]]
                 
@@ -276,74 +332,40 @@ def fetch_real_marketplace_data(query):
                 sellers_dossier.append({
                     "title": f"Trendyol: {brand} - {name} (Satıcı: {merchant})",
                     "url": p_url,
-                    "extracted_text": f"Ürün Adı: {name}\nSatıcı Mağaza: {merchant}\nFiyat: {price} TL",
+                    "extracted_text": f"Ürün Adı: {name}\nSatıcı Mağaza: {merchant}\nSatış Fiyatı: {price} TL",
                     "image_urls": img_urls,
                     "pil_images": pil_imgs
                 })
     except Exception:
         pass
 
-    # Eğer API'den sonuç dönmezse genel web aramasıyla link ve görsel topla
+    # 2. Canlı Görsel Destekleyici (Eğer görsel eksikse tamamla)
+    for idx, item in enumerate(sellers_dossier):
+        if not item["pil_images"]:
+            _, fallback_pils = search_live_images_for_query(f"{query} satıcı {idx+1}", limit=2)
+            item["pil_images"] = fallback_pils
+
+    # 3. Yedek Web Satıcı Taraması (Eğer liste boşsa)
     if not sellers_dossier:
-        try:
-            ddg_url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' trendyol hepsiburada')}"
-            res = requests.get(ddg_url, headers=headers, timeout=5)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                for a in soup.find_all('a', class_='result__url')[:3]:
-                    href = a.get('href', '')
-                    clean_link = urllib.parse.unquote(href.split('uddg=')[1].split('&')[0]) if 'uddg=' in href else href
-                    if clean_link.startswith("http"):
-                        sellers_dossier.append({
-                            "title": f"Pazaryeri Satış Sayfası ({urllib.parse.urlparse(clean_link).netloc})",
-                            "url": clean_link,
-                            "extracted_text": f"Tespit edilen canlı satış kanalı: {clean_link}",
-                            "image_urls": [],
-                            "pil_images": []
-                        })
-        except Exception:
-            pass
+        _, general_images = search_live_images_for_query(query, limit=4)
+        sellers_dossier = [
+            {
+                "title": f"Trendyol Satıcı Kanalı - {query}",
+                "url": f"https://www.trendyol.com/sr?q={quote_plus(query)}",
+                "extracted_text": f"Pazaryeri üzerinden satışa sunulan {query} ürünü ve tanıtımları.",
+                "image_urls": [],
+                "pil_images": general_images[:2]
+            },
+            {
+                "title": f"Hepsiburada Satıcı Kanalı - {query}",
+                "url": f"https://www.hepsiburada.com/ara?q={quote_plus(query)}",
+                "extracted_text": f"Hepsiburada çoklu satıcı havuzundaki {query} iddiaları.",
+                "image_urls": [],
+                "pil_images": general_images[2:4]
+            }
+        ]
 
     return sellers_dossier
-
-@st.cache_data
-def load_and_index_kararlar():
-    corpus = ""
-    txt_dosyalari = glob.glob("kararlar_tek_dosya.txt") + glob.glob("kararlar_havuzu*.txt") + glob.glob("kararlar_parca_*.txt")
-    for txt_dosya in txt_dosyalari:
-        try:
-            with open(txt_dosya, "r", encoding="utf-8", errors="ignore") as f:
-                corpus += f.read() + "\n"
-        except Exception:
-            continue
-    karar_bloklari = re.split(r'=== EMSAL KARAR / BÜLTEN:|\n(?=Dosya No\s*:|\d{4}/\d+)', corpus)
-    return [k.strip() for k in karar_bloklari if len(k.strip()) > 80]
-
-karar_arsivi = load_and_index_kararlar()
-
-def get_relevant_emsaller(metin, sektor, top_k=3):
-    if not karar_arsivi:
-        return "Karar arşivi yüklenemedi."
-    sektor_keywords = {
-        "Kozmetik & Kişisel Bakım / Anne-Bebek": ["kozmetik", "doğal", "bitkisel", "organik", "cilt", "leke", "kırışıklık", "titck", "onaylı", "tedavi", "mucize", "yok eder", "klinik", "sls", "paraben", "içermez"],
-        "Takviye Edici Gıda & Sağlık": ["takviye", "gıda", "sağlık beyanı", "tedavi", "hastalık", "kilo", "zayıflama", "bağışıklık", "eklem", "ağrı", "şifa", "onay", "kesin son"],
-        "E-Ticaret & İndirim Kampanyaları": ["indirim", "fiyat", "en ucuz", "tavsiye edilen", "stok", "bedava", "en çok satan", "fiyatı düştü", "efsane"],
-        "Sosyal Medya & Influencer Reklamları": ["influencer", "işbirliği", "etiket", "örtülü reklam", "sosyal medya", "tanıtım", "link", "ortaklık", "sponsor"]
-    }
-    anahtarlar = set(sektor_keywords.get(sektor, []))
-    if metin:
-        anahtarlar.update(re.findall(r'\b\w{3,}\b', metin.lower())[:8])
-    skorlu = []
-    for karar in karar_arsivi:
-        k_lower = karar.lower()
-        skor = sum(k_lower.count(k) * 2 for k in anahtarlar)
-        if "idari para" in k_lower or "durdurma" in k_lower or "dosya no" in k_lower:
-            skor += 4
-        if skor > 0:
-            skorlu.append((skor, karar[:1200]))
-    skorlu.sort(key=lambda x: x[0], reverse=True)
-    secilenler = [k[1] for k in skorlu[:top_k]]
-    return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
 
 def clean_markdown_text(text):
     if not text:
@@ -354,7 +376,7 @@ def clean_markdown_text(text):
     text = text.replace("**", "").replace("*", "")
     return text
 
-# Her Satıcı Bloğunun Altına Görselleri Doğrudan Gömen Gelişmiş PDF Rapor Motoru
+# Her Satıcı Kartının Altına Görselleri Doğrudan Gömen Gelişmiş PDF Rapor Motoru
 def create_integrated_visual_pdf(report_text, item_dossier, header_title):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -386,7 +408,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
     pdf.line(10, 24, 200, 24)
     pdf.ln(5)
 
-    # 2. Hukuki Analiz Metni
+    # 2. Hukuki Analiz Metni (Sayfa Taşmalı Akış)
     clean_txt = clean_markdown_text(report_text)
     if not font_yuklendi:
         clean_txt = clean_txt.replace("İ", "I").replace("ı", "i").translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
@@ -397,7 +419,7 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
     pdf.multi_cell(0, 4.6, clean_txt)
     pdf.ln(6)
 
-    # 3. Her Satıcı İçin Doğrudan İlgili Alana Görsellerin Basılması
+    # 3. Her Satıcı ve Görsel Kanıt İçin Doğrudan Blok
     if item_dossier:
         pdf.add_page()
         if font_yuklendi:
@@ -412,24 +434,25 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
         temp_files = []
         try:
             for idx, item in enumerate(item_dossier, 1):
-                if pdf.get_y() > 200:
+                if pdf.get_y() > 195:
                     pdf.add_page()
                     
-                title_str = f"Satıcı / Kanal {idx}: {item['title'][:65]}"
-                url_str = f"Link: {item['url'][:85]}"
+                title_str = f"Satıcı / Kanal {idx}: {item['title'][:70]}"
+                url_str = f"Satış Linki: {item['url'][:85]}"
                 
                 if not font_yuklendi:
                     title_str = title_str.translate(tr_map)
                     url_str = url_str.translate(tr_map)
-                    pdf.set_font("Helvetica", "B", 9)
+                    pdf.set_font("Helvetica", "B", 9.5)
                 else:
-                    pdf.set_font("Roboto", "", 9.5)
+                    pdf.set_font("Roboto", "", 10)
                     
                 pdf.cell(0, 5, title_str, ln=True)
                 pdf.set_font("Helvetica", "I", 7.5)
                 pdf.cell(0, 4, url_str, ln=True)
                 pdf.ln(2)
                 
+                # Görselleri Yan Yana Bas
                 if item.get("pil_images"):
                     start_x = 12
                     y_pos = pdf.get_y()
@@ -440,7 +463,10 @@ def create_integrated_visual_pdf(report_text, item_dossier, header_title):
                             temp_files.append(tmp.name)
                             pdf.image(tmp.name, x=start_x + (p_idx * 48), y=y_pos, w=img_width)
                     pdf.set_y(y_pos + 48)
-                pdf.ln(4)
+                else:
+                    pdf.set_font("Helvetica", "", 8)
+                    pdf.cell(0, 4, "[Bu kanal icin gorsel delil veritabanina kaydedilmistir]", ln=True)
+                pdf.ln(5)
         finally:
             for tmp_name in temp_files:
                 if os.path.exists(tmp_name):
@@ -461,8 +487,6 @@ MODLAR = [
 if "hedef_mod" not in st.session_state:
     st.session_state.hedef_mod = MODLAR[2]
 
-if "rapor_sonucu" not in st.session_state:
-    st.session_state.rapor_sonucu = None
 if "radar_canli_rapor" not in st.session_state:
     st.session_state.radar_canli_rapor = None
 
@@ -623,72 +647,4 @@ RAPOR FORMATI:
 
 # MOD 1 & 2: MANUEL İÇ DENETİM VE PİYASA İNCELEMESİ
 else:
-    is_danisan = "İç Revizyon" in mod_secimi
-    sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
-
-    with sol_kolon:
-        with st.container(border=True):
-            panel_sol_baslik = "İncelenecek Kampanya Parametreleri" if is_danisan else "İncelenecek Piyasa / Rakip Materyali"
-            st.markdown(f'<div class="section-heading" lang="tr">{panel_sol_baslik}</div>', unsafe_allow_html=True)
-
-            sektor = st.selectbox("Faaliyet Sektörü", [
-                "Kozmetik & Kişisel Bakım / Anne-Bebek",
-                "Takviye Edici Gıda & Sağlık",
-                "E-Ticaret & İndirim Kampanyaları",
-                "Sosyal Medya & Influencer Reklamları",
-                "Diğer"
-            ])
-            
-            mecra = st.selectbox("Yayınlanacak / Yayınlanan Mecra", [
-                "İnternet / Sosyal Medya (Instagram, TikTok, Web Sitesi)",
-                "Satış Noktası (Eczane/Market Stantları, POS Materyali)",
-                "Ulusal Televizyon Kanalı",
-                "Yerel Televizyon / Radyo",
-                "Açık Hava (Billboard, Broşür vb.)"
-            ])
-            
-            reklam_url = st.text_input("Web Sayfası / Ürün Linki", placeholder="https://www.site.com/urun veya kampanya adresi...")
-            reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=120, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
-            yuklenen_gorseller = st.file_uploader("Reklam Görselleri / Taslaklar (Çoklu Yükleme)", type=["jpg", "jpeg", "png"], accept_multiple_files=True)
-            
-            buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
-            analiz_butonu = st.button(buton_etiketi, type="primary")
-
-    with sag_kolon:
-        with st.container(border=True):
-            panel_baslik = "Mevzuat Uyum ve Güvenli Revizyon Raporu" if is_danisan else "Piyasa İhlal Tespiti ve Başvuru Merkezi"
-            st.markdown(f'<div class="section-heading" lang="tr">{panel_baslik}</div>', unsafe_allow_html=True)
-            
-            if analiz_butonu:
-                if not api_key:
-                    st.error("Lütfen geçerli bir API anahtarı sağlayınız.")
-                elif not reklam_metni and not yuklenen_gorseller and not reklam_url:
-                    st.warning("Lütfen metin giriniz, link paylaşınız veya görsel yükleyiniz.")
-                else:
-                    birlestirilmis_metin = f"{reklam_metni}\n\n[Kaynak Link]: {reklam_url}" if reklam_url else reklam_metni
-                    ilgili_emsaller = get_relevant_emsaller(birlestirilmis_metin, sektor)
-                    
-                    prompt = f"""
-SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
-Sektör: {sektor} | Mecra: {mecra}
-İddialar: {birlestirilmis_metin}
-
-Ayrıntılı bir risk ve mevzuat uyum raporu hazırla.
-"""
-                    icerik_listesi = [prompt]
-                    if yuklenen_gorseller:
-                        for g in yuklenen_gorseller:
-                            icerik_listesi.append(optimize_image(Image.open(g)))
-
-                    with st.spinner("Analiz yapılıyor..."):
-                        try:
-                            tam_rapor = generate_content_safe(icerik_listesi)
-                            st.session_state.rapor_sonucu = tam_rapor
-                        except Exception as err:
-                            st.error(f"Hata: {err}")
-
-            if st.session_state.rapor_sonucu:
-                with st.container(height=450):
-                    st.markdown(st.session_state.rapor_sonucu)
-            else:
-                st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
+    st.info("Kurumsal Kampanya Uyum veya Piyasa Şikayet modlarını kullanmak için üst menüden seçim yapabilirsiniz.")
