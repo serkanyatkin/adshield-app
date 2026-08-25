@@ -15,6 +15,7 @@ import io
 import urllib.parse
 from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
+import textwrap  # PDF çökmesini engelleyecek kütüphane
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -487,7 +488,7 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     secilenler = [k[1] for k in skorlu[:top_k]]
     return "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler if secilenler else karar_arsivi[:2])
 
-# --- GÜÇLENDİRİLMİŞ PDF OLUŞTURUCU (Tam Korumalı) ---
+# --- FPDF ÇÖKMESİNİ ENGELLEYEN %100 GARANTİLİ TEXTWRAP MOTORU ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -495,10 +496,12 @@ def create_pdf(report_text, baslik_metni):
     
     tr_map = str.maketrans("ğĞüÜşŞçÇİı", "gGuUsScCIi")
     
+    # Başlık
     pdf.set_font("Helvetica", "B", 16)
     baslik_ascii = baslik_metni.translate(tr_map)
     pdf.cell(0, 10, baslik_ascii, ln=True, align="C")
     
+    # Tarih
     pdf.set_font("Helvetica", "I", 10)
     pdf.set_text_color(100, 100, 100)
     pdf.cell(0, 6, f"Tarih: {datetime.now().strftime('%d.%m.%Y %H:%M')}", ln=True, align="C")
@@ -506,53 +509,42 @@ def create_pdf(report_text, baslik_metni):
     pdf.ln(8)
     
     pdf.set_text_color(0, 0, 0)
-    
-    # Kesin Çözüm: Gizli karakter temizleyici ve kelime kırıcı
-    def safe_text_for_pdf(txt):
-        # Yapay zekanın üretebildiği gizli boşlukları (NBSP) ve sekmeleri temizle
-        txt = txt.replace('\xa0', ' ').replace('\t', ' ')
-        words = txt.split(' ') # Sadece standart boşluklardan böl
-        safe_words = []
-        for w in words:
-            if len(w) > 55:
-                safe_words.append(" ".join([w[i:i+55] for i in range(0, len(w), 55)]))
-            else:
-                safe_words.append(w)
-        # İki kere boşluk olan yerleri tek boşluğa indirge
-        return re.sub(' +', ' ', " ".join(safe_words))
 
+    # Metni Satır Satır FPDF'in multi_cell motoruna girmeden Python ile bölüyoruz
     lines = report_text.split('\n')
     for line in lines:
         line = line.strip()
         if not line:
-            pdf.ln(4)
+            pdf.ln(3)
             continue
         
-        line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
-        line_safe = safe_text_for_pdf(line_ascii)
-        
-        # Eğer line sadece boşluklardan ibaret kaldıysa hata vermemesi için geç:
-        if not line_safe.strip():
-            continue
+        # Sıkıntılı gizli boşlukları ve karakterleri güvenliye çevir
+        line_ascii = line.replace("’", "'").replace("“", '"').replace("”", '"').replace('\xa0', ' ').replace('\t', ' ')
+        line_ascii = line_ascii.translate(tr_map).encode('latin-1', 'replace').decode('latin-1')
 
         if line.startswith("###") or line.startswith("I.") or line.startswith("II.") or line.startswith("III.") or line.startswith("IV.") or line.startswith("V."):
             pdf.set_font("Helvetica", "B", 12)
-            temiz_baslik = line_safe.replace("###", "").replace("**", "").strip()
-            if temiz_baslik:
-                pdf.multi_cell(0, 7, temiz_baslik)
-                pdf.ln(2)
-            
+            temiz_satir = line_ascii.replace("###", "").replace("**", "").strip()
+            satir_yuksekligi = 7
         elif line.startswith("* **") or line.startswith("- **"):
             pdf.set_font("Helvetica", "B", 11)
-            temiz_alt = line_safe.replace("**", "").replace("* ", "").replace("- ", "").strip()
-            if temiz_alt:
-                pdf.multi_cell(0, 6, temiz_alt)
-            
+            temiz_satir = line_ascii.replace("**", "").replace("* ", "").replace("- ", "").strip()
+            satir_yuksekligi = 6
         else:
             pdf.set_font("Helvetica", "", 11)
-            temiz_satir = line_safe.replace("**", "").replace("*", "").strip()
-            if temiz_satir:
-                pdf.multi_cell(0, 6, temiz_satir)
+            temiz_satir = line_ascii.replace("**", "").replace("*", "").strip()
+            satir_yuksekligi = 6
+
+        # FPDF'in kendi bölücüsü yerine Textwrap ile sayfaya sığacak şekilde satırlara ayır
+        # Genişlik (width=85) font büyüklüğüne göre tam sayfaya oturur ve FPDF'in sınırları aşmasını engeller.
+        wrapped_lines = textwrap.wrap(temiz_satir, width=85, break_long_words=True, replace_whitespace=False)
+        
+        for wl in wrapped_lines:
+            pdf.cell(0, satir_yuksekligi, wl, ln=True)
+            
+        # Eğer madde imi değilse paragraflar arası biraz nefes boşluğu bırak
+        if not (line.startswith("* ") or line.startswith("- ")):
+            pdf.ln(2)
             
     return bytes(pdf.output())
 
