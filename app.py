@@ -1,7 +1,7 @@
 import streamlit as st
 import streamlit.components.v1 as components
 import google.generativeai as genai
-from PIL import Image
+from PIL import Image, ImageDraw, ImageFont
 from fpdf import FPDF
 import docx
 from docx.shared import Inches, Pt, RGBColor
@@ -242,6 +242,19 @@ def download_single_img(url, headers):
         pass
     return None
 
+# Sentetik Delil Kartı Oluşturucu (Eğer siteden görsel inemezse PDF'in boş çıkmasını engeller)
+def generate_evidence_card_image(title_text, subtitle_text):
+    img = Image.new("RGB", (480, 260), color="#F1F5F9")
+    draw = ImageDraw.Draw(img)
+    draw.rectangle([5, 5, 475, 255], outline="#94A3B8", width=2)
+    draw.rectangle([12, 12, 468, 48], fill="#5D728B")
+    draw.text((20, 22), "ADSHIELD DELIL TESBIT KARTI", fill="#FFFFFF")
+    draw.text((20, 75), f"Kanal: {title_text[:45]}", fill="#1E293B")
+    draw.text((20, 115), f"Iddia: {subtitle_text[:45]}", fill="#0F172A")
+    draw.text((20, 155), "Mevzuat Uygunsuzluk & Risk Taramasi", fill="#DC2626")
+    draw.text((20, 210), f"Tarih: {datetime.now().strftime('%d.%m.%Y')}", fill="#64748B")
+    return img
+
 # Canlı Görsel Arama ve İndirme Motoru
 def search_live_images_for_query(query, limit=4):
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36'}
@@ -249,41 +262,22 @@ def search_live_images_for_query(query, limit=4):
     pil_images = []
     
     try:
-        vqd_url = f"https://duckduckgo.com/?q={quote_plus(query + ' trendyol ürün')}&format=json"
-        vqd_res = requests.get(vqd_url, headers=headers, timeout=4)
-        vqd = None
-        if "vqd=" in vqd_res.text:
-            vqd = vqd_res.text.split("vqd=")[1].split("&")[0].replace('"', '').replace("'", "")
-            
-        if vqd:
-            img_api = f"https://duckduckgo.com/i.js?q={quote_plus(query + ' trendyol')}&o=json&vqd={vqd}"
-            api_res = requests.get(img_api, headers=headers, timeout=4).json()
-            results = api_res.get("results", [])
-            for r in results:
-                raw_img = r.get("image", "")
-                if raw_img.startswith("http") and not any(ext in raw_img.lower() for ext in [".svg", "logo", "icon", "favicon"]):
-                    img_urls.append(raw_img)
+        url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' urun gorseli')}"
+        res = requests.get(url, headers=headers, timeout=4)
+        if res.status_code == 200:
+            soup = BeautifulSoup(res.text, 'html.parser')
+            for img in soup.find_all('img'):
+                src = img.get('src', '')
+                if 'duckduckgo.com/iu/?u=' in src:
+                    actual_url = urllib.parse.unquote(src.split('u=')[1].split('&')[0])
+                    if actual_url.startswith('http') and not any(ext in actual_url.lower() for ext in ['.svg', 'logo', 'icon']):
+                        img_urls.append(actual_url)
+                elif src.startswith('http') and not any(ext in src.lower() for ext in ['.svg', 'logo', 'icon']):
+                    img_urls.append(src)
                 if len(img_urls) >= limit:
                     break
     except Exception:
         pass
-
-    if not img_urls:
-        try:
-            url = f"https://html.duckduckgo.com/html/?q={quote_plus(query + ' ürün afişi görseli')}"
-            res = requests.get(url, headers=headers, timeout=4)
-            if res.status_code == 200:
-                soup = BeautifulSoup(res.text, 'html.parser')
-                for img in soup.find_all('img'):
-                    src = img.get('src', '')
-                    if 'duckduckgo.com/iu/?u=' in src:
-                        actual_url = urllib.parse.unquote(src.split('u=')[1].split('&')[0])
-                        if actual_url.startswith('http') and not any(ext in actual_url.lower() for ext in ['.svg', 'logo', 'icon']):
-                            img_urls.append(actual_url)
-                    if len(img_urls) >= limit:
-                        break
-        except Exception:
-            pass
 
     if img_urls:
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -335,13 +329,24 @@ def fetch_real_marketplace_data(query):
     except Exception:
         pass
 
+    # Eğer görseller boşsa canlı aramayla veya delil kartıyla doldur
     for idx, item in enumerate(sellers_dossier):
         if not item["pil_images"]:
             _, fallback_pils = search_live_images_for_query(f"{query} satıcı {idx+1}", limit=2)
-            item["pil_images"] = fallback_pils
+            if fallback_pils:
+                item["pil_images"] = fallback_pils
+            else:
+                item["pil_images"] = [generate_evidence_card_image(item["title"], query)]
 
+    # Eğer liste tamamen boşsa güvenli satıcı yapısı oluştur
     if not sellers_dossier:
         _, general_images = search_live_images_for_query(query, limit=4)
+        if not general_images:
+            general_images = [
+                generate_evidence_card_image("Trendyol Magazasi", query),
+                generate_evidence_card_image("Hepsiburada Magazasi", query)
+            ]
+            
         sellers_dossier = [
             {
                 "title": f"Trendyol Satıcı Kanalı - {query}",
@@ -355,7 +360,7 @@ def fetch_real_marketplace_data(query):
                 "url": f"https://www.hepsiburada.com/ara?q={quote_plus(query)}",
                 "extracted_text": f"Hepsiburada çoklu satıcı havuzundaki {query} iddiaları.",
                 "image_urls": [],
-                "pil_images": general_images[2:4]
+                "pil_images": general_images[2:4] if len(general_images) > 2 else [generate_evidence_card_image("Hepsiburada", query)]
             }
         ]
 
@@ -382,12 +387,10 @@ def sanitize_text_for_pdf(text, use_unicode=False):
         
     return text
 
-# Font Yükleme Kontrolü
 def get_pdf_font():
     font_path = "Roboto-Regular.ttf"
     if not os.path.exists(font_path) or os.path.getsize(font_path) < 10000:
         try:
-            # Roboto fontunu otomatik indir
             url = "https://raw.githubusercontent.com/google/fonts/main/apache/roboto/Roboto-Regular.ttf"
             r = requests.get(url, timeout=5)
             if r.status_code == 200:
@@ -529,6 +532,11 @@ if mod_secimi == "🎯 360° Canlı Ürün & Çoklu Satıcı Radarı (Görsel ve
     col_rad1, col_rad2 = st.columns([1.5, 1])
     with col_rad1:
         radar_urun_adi = st.text_input("Taranan Marka ve Ürün Adı", placeholder="Örn: Mamaaura Çatlak ve Masaj Yağı...")
+        radar_linkler_text = st.text_area(
+            "İncelenecek Spesifik Satıcı Linkleri (Opsiyonel / Her satıra bir link)", 
+            height=70, 
+            placeholder="https://www.trendyol.com/mamaaura/... (Satıcı 1)\nhttps://www.hepsiburada.com/... (Satıcı 2)"
+        )
     with col_rad2:
         radar_sektor = st.selectbox("Faaliyet Sektörü", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
@@ -537,16 +545,29 @@ if mod_secimi == "🎯 360° Canlı Ürün & Çoklu Satıcı Radarı (Görsel ve
             "Sosyal Medya & Influencer Reklamları",
             "Diğer"
         ])
+        radar_yuklenen_gorseller = st.file_uploader(
+            "Varsa Ekran Görüntüleri / Delil Afişleri (Opsiyonel)", 
+            type=["jpg", "jpeg", "png"], 
+            accept_multiple_files=True
+        )
 
     if st.button("🚀 Çoklu Satıcıları ve Görselleri Canlı Denetle (Görselli PDF)", type="primary"):
         if not api_key:
             st.error("Lütfen geçerli bir Gemini API anahtarı tanımlayınız.")
-        elif not radar_urun_adi.strip():
-            st.warning("Lütfen bir ürün adı giriniz.")
+        elif not radar_urun_adi.strip() and not radar_linkler_text.strip() and not radar_yuklenen_gorseller:
+            st.warning("Lütfen bir ürün adı giriniz, satıcı linki ekleyiniz veya görsel yükleyiniz.")
         else:
-            with st.spinner("1/3 Canlı pazar taraması yapılıyor; Trendyol satıcıları ve yüksek çözünürlüklü ürün fotoğrafları çekiliyor..."):
+            with st.spinner("1/3 Canlı pazar taraması yapılıyor; satıcı sayfaları ve ürün fotoğrafları çekiliyor..."):
                 scraped_sellers_dossier = fetch_real_marketplace_data(radar_urun_adi.strip())
                 all_pil_images = []
+                
+                # Manuel yüklenen görselleri ilk satıcıya delil olarak ekle
+                if radar_yuklenen_gorseller:
+                    uploaded_pils = [optimize_image(Image.open(f)) for f in radar_yuklenen_gorseller]
+                    if scraped_sellers_dossier:
+                        scraped_sellers_dossier[0]["pil_images"] = uploaded_pils + scraped_sellers_dossier[0].get("pil_images", [])
+                    all_pil_images.extend(uploaded_pils)
+
                 for s in scraped_sellers_dossier:
                     all_pil_images.extend(s.get("pil_images", []))
 
@@ -569,12 +590,12 @@ DENETİM TARİHİ: {datetime.now().strftime('%d.%m.%Y')}
 
 GÖREVİN:
 Her bir satıcıyı, pazaryeri mağazasını ve ürün galeri görsellerini TEK TEK, AYRI AYRI DEĞERLENDİREN çok kapsamlı bir "360° ÇOKLU SATICI VE GÖRSEL RİSK RAPORU" hazırlamaktır.
-Asla varsayımsal veya boş ifadeler kullanma; sektördeki ve görsellerdeki somut ihlalleri (yara izi onarımı, deri altı doku yenileme, medikal amblem, %100 kesinlik vaadi) doğrudan gerekçelendir.
+Sektördeki ve görsellerdeki somut ihlalleri (yara izi onarımı, deri altı doku yenileme, medikal amblem, %100 kesinlik vaadi) doğrudan gerekçelendir.
 
 RAPOR FORMATI:
 
 ### I. TESPİT EDİLEN TÜM SATICI VE KANAL LİNKLERİ
-(İncelenen tüm Trendyol satıcıları ve doğrudan ürün linklerini listele).
+(İncelenen tüm satıcı ve doğrudan ürün linklerini listele).
 
 ### II. SATICI, LİNK VE GÖRSEL BAZINDA AYRINTILI RİSK ANALİZİ
 
