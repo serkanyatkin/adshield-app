@@ -18,45 +18,35 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Sayfayı Akıllı Kaydırma Fonksiyonları (Otomatik Scroll)
-def scroll_to_bottom():
-    components.html("""
+# Sayfa İçi Çapa (Anchor) ve Otomatik Kaydırma Fonksiyonu
+def trigger_scroll(position="top"):
+    components.html(f"""
     <script>
-        setTimeout(() => {
-            try {
-                const doc = window.document;
-                const main = doc.querySelector('section.main') || doc.documentElement || doc.body;
-                main.scrollTo({ top: main.scrollHeight, behavior: 'smooth' });
-            } catch(e){}
-            try {
-                const pDoc = window.parent.document;
-                const pMain = pDoc.querySelector('section.main') || pDoc.documentElement || pDoc.body;
-                pMain.scrollTo({ top: pMain.scrollHeight, behavior: 'smooth' });
-            } catch(e){}
-        }, 150);
+        setTimeout(() => {{
+            try {{
+                const p = window.parent;
+                const doc = p ? p.document : document;
+                const container = doc.querySelector('[data-testid="stAppViewContainer"]') || 
+                                  doc.querySelector('section.main') || 
+                                  doc.documentElement || 
+                                  doc.body;
+                if ("{position}" === "bottom") {{
+                    if (container) container.scrollTo({{ top: container.scrollHeight + 3000, behavior: 'smooth' }});
+                    const el = doc.getElementById('page-bottom-anchor');
+                    if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'end' }});
+                }} else if ("{position}" === "top") {{
+                    if (container) container.scrollTo({{ top: 0, behavior: 'smooth' }});
+                    const el = doc.getElementById('page-top-anchor');
+                    if (el) el.scrollIntoView({{ behavior: 'smooth', block: 'start' }});
+                }}
+            }} catch(e) {{}}
+        }}, 200);
     </script>
     """, height=0, width=0)
 
-def scroll_to_top():
-    components.html("""
-    <script>
-        setTimeout(() => {
-            try {
-                const doc = window.document;
-                const main = doc.querySelector('section.main') || doc.documentElement || doc.body;
-                main.scrollTo({ top: 0, behavior: 'smooth' });
-            } catch(e){}
-            try {
-                const pDoc = window.parent.document;
-                const pMain = pDoc.querySelector('section.main') || pDoc.documentElement || pDoc.body;
-                pMain.scrollTo({ top: 0, behavior: 'smooth' });
-            } catch(e){}
-        }, 100);
-    </script>
-    """, height=0, width=0)
-
-# Kurumsal Tema ve Stiller
+# Kurumsal Tasarım ve Stiller
 st.markdown("""
+<div id="page-top-anchor"></div>
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
     
@@ -212,10 +202,9 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# Otomatik Önbellekli Model Listesi (Sadece ilk açılışta taranır, sıfır gecikme yaratır)
 @st.cache_resource(show_spinner=False)
 def get_active_models(current_api_key):
-    fallback = ["gemini-3.6-flash", "gemini-3.5-flash", "gemini-2.5-flash", "gemini-1.5-flash"]
+    fallback = ["gemini-2.5-flash", "gemini-1.5-flash", "gemini-1.5-pro"]
     if not current_api_key:
         return fallback
     try:
@@ -223,12 +212,9 @@ def get_active_models(current_api_key):
         available = []
         for m in genai.list_models():
             if 'generateContent' in m.supported_generation_methods:
-                m_name = m.name.replace("models/", "")
-                available.append(m_name)
+                available.append(m.name.replace("models/", ""))
         if available:
-            flash_models = [m for m in available if "flash" in m]
-            other_models = [m for m in available if "flash" not in m]
-            return flash_models + other_models
+            return [m for m in available if "flash" in m] + [m for m in available if "flash" not in m]
     except Exception:
         pass
     return fallback
@@ -239,7 +225,6 @@ def generate_stream_safe(contents, system_instruction=None):
     genai.configure(api_key=api_key)
     models_to_try = get_active_models(api_key)
     last_err = None
-    
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
@@ -259,7 +244,6 @@ def generate_content_safe(contents, system_instruction=None):
     genai.configure(api_key=api_key)
     models_to_try = get_active_models(api_key)
     last_err = None
-    
     for model_name in models_to_try:
         try:
             model = genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
@@ -423,15 +407,17 @@ def create_pdf(report_text, baslik_metni):
 
     return bytes(pdf.output())
 
-# Session State
+# Session State Değişkenleri
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
     st.session_state.dilekce_sonucu = None
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
-if "last_uploaded_count" not in st.session_state:
-    st.session_state.last_uploaded_count = 0
+if "last_file_count" not in st.session_state:
+    st.session_state.last_file_count = 0
+if "rakip_gorunum" not in st.session_state:
+    st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
 
 # Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
@@ -487,12 +473,13 @@ with sol_kolon:
                 g_img = Image.open(g_dosya)
                 gorsel_cols[idx % 4].image(g_img, caption=f"Görsel {idx+1}", use_container_width=True)
             
-            if len(yuklenen_gorseller) != st.session_state.last_uploaded_count:
-                st.session_state.last_uploaded_count = len(yuklenen_gorseller)
-                scroll_to_bottom()
+            if len(yuklenen_gorseller) != st.session_state.last_file_count:
+                st.session_state.last_file_count = len(yuklenen_gorseller)
+                trigger_scroll("bottom")
         else:
-            st.session_state.last_uploaded_count = 0
+            st.session_state.last_file_count = 0
 
+        st.markdown('<div id="page-bottom-anchor"></div>', unsafe_allow_html=True)
         buton_etiketi = "Uyum Analizi ve Güvenli Revizyonu Başlat" if is_danisan else "Rakip İhlal Analizini Başlat"
         analiz_butonu = st.button(buton_etiketi, type="primary")
 
@@ -502,7 +489,7 @@ with sag_kolon:
         st.markdown(f'<div class="section-heading" lang="tr">{panel_baslik}</div>', unsafe_allow_html=True)
         
         if analiz_butonu:
-            scroll_to_top()
+            trigger_scroll("top")
 
             if not api_key:
                 st.error("Lütfen geçerli bir API anahtarı sağlayınız.")
@@ -599,10 +586,11 @@ RAPOR FORMATI:
                     st.session_state.rapor_sonucu = tam_rapor
                     st.session_state.dilekce_sonucu = None
                     st.session_state.chat_history = []
+                    st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
                 except Exception as err:
                     st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
-        # Rapor Gösterimi
+        # Rapor & Dilekçe Alanı (Durum Korumalı Sekme)
         if st.session_state.rapor_sonucu:
             if is_danisan:
                 with st.container(height=450):
@@ -620,8 +608,16 @@ RAPOR FORMATI:
                 except Exception as e:
                     st.warning(f"PDF uyarısı: {e}")
             else:
-                tab_ihlal, tab_dilekce = st.tabs(["Haksız Rekabet ve İhlal Raporu", "Reklam Kurulu Şikayet Dilekçesi"])
-                with tab_ihlal:
+                # Durumu Kaybolmayan Sekme Seçici
+                secili_gorunum = st.radio(
+                    "Görünüm Seçiniz",
+                    ["Haksız Rekabet ve İhlal Raporu", "Reklam Kurulu Şikayet Dilekçesi"],
+                    horizontal=True,
+                    label_visibility="collapsed",
+                    key="rakip_gorunum"
+                )
+
+                if secili_gorunum == "Haksız Rekabet ve İhlal Raporu":
                     with st.container(height=450):
                         st.markdown(st.session_state.rapor_sonucu)
                     try:
@@ -636,12 +632,13 @@ RAPOR FORMATI:
                     except Exception as e:
                         st.warning(f"PDF uyarısı: {e}")
 
-                with tab_dilekce:
-                    st.caption("Resmi formatta Reklam Kurulu Şikayet Dilekçesi oluşturur.")
-                    if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
-                        with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
-                            try:
-                                dilekce_prompt = f"""
+                else:
+                    st.caption("İncelenen rakip tanıtım hakkında resmi formatta Reklam Kurulu Şikayet Dilekçesi.")
+                    if not st.session_state.dilekce_sonucu:
+                        if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
+                            with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
+                                try:
+                                    dilekce_prompt = f"""
 Sen tüketici hukuku ve reklam mevzuatında uzman kıdemli bir Hukuk Müşavirisin.
 RAPOR VERİSİ:
 {st.session_state.rapor_sonucu}
@@ -656,9 +653,10 @@ AÇIKLAMALAR:
 4. [İHLAL CÜMLESİ]: (...)
 SONUÇ VE İSTEM: (...)
 """
-                                st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
-                            except Exception as e:
-                                st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
+                                    st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
+                                    st.rerun()
+                                except Exception as e:
+                                    st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
 
                     if st.session_state.dilekce_sonucu:
                         with st.container(height=400):
