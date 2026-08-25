@@ -12,7 +12,6 @@ import glob
 import re
 import requests
 import io
-import urllib.parse
 from urllib.parse import urljoin, quote_plus
 from concurrent.futures import ThreadPoolExecutor
 
@@ -536,7 +535,9 @@ def create_docx(dilekce_text):
     docx_io.seek(0)
     return docx_io.getvalue()
 
-# Session State
+# Session State Değişkenleri
+if "aktif_mod" not in st.session_state:
+    st.session_state.aktif_mod = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
@@ -549,8 +550,10 @@ if "rakip_gorunum" not in st.session_state:
     st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
 if "radar_sonuclari" not in st.session_state:
     st.session_state.radar_sonuclari = None
+if "radar_aktarildi_mesaj" not in st.session_state:
+    st.session_state.radar_aktarildi_mesaj = False
 
-# Mod Seçimi (3 Modlu Yapı)
+# Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
 
 mod_secimi = st.radio(
@@ -561,7 +564,8 @@ mod_secimi = st.radio(
         "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)"
     ],
     horizontal=True,
-    label_visibility="collapsed"
+    label_visibility="collapsed",
+    key="aktif_mod"
 )
 
 # MOD 3: 360° RAKİP, PAZARYERİ & ÜRÜN RADARI
@@ -665,11 +669,18 @@ KAPSAM:
             st.session_state.rapor_sonucu = r_data['analiz']
             st.session_state.dilekce_sonucu = None
             st.session_state.rakip_gorunum = "Reklam Kurulu Şikayet Dilekçesi"
-            st.info("Pazaryeri, afiş ve video iddiaları konsolide edildi. 'Piyasa ve Rakip Reklam İncelemesi' modülüne geçerek taraf bilgileriyle resmi Word dilekçenizi oluşturabilirsiniz.")
+            st.session_state.aktif_mod = "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)"
+            st.session_state.radar_aktarildi_mesaj = True
+            st.rerun()
 
 # MOD 1 & 2: MANUEL İÇ DENETİM VE PİYASA İNCELEMESİ
 else:
     is_danisan = "İç Revizyon" in mod_secimi
+
+    if st.session_state.radar_aktarildi_mesaj:
+        st.success("✅ Radarda tespit edilen tüm ihlaller aktarıldı. Aşağıdan taraf bilgilerini girerek resmi Word dilekçenizi oluşturabilirsiniz.")
+        st.session_state.radar_aktarildi_mesaj = False
+
     sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
     with sol_kolon:
