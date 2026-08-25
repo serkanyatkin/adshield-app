@@ -1,7 +1,8 @@
 streamlit
+requests
+reportlab
 google-generativeai
 pillow
 fpdf2
 python-docx
-requests
 beautifulsoup4
