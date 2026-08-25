@@ -158,12 +158,34 @@ st.markdown("""
         padding-bottom: 5px;
     }
 
-    .radar-card {
+    .radar-links-box {
         background: #F8FAFC;
-        border: 1px solid #E2E8F0;
+        border: 1px solid #CBD5E1;
         border-radius: 6px;
-        padding: 14px;
-        margin-bottom: 10px;
+        padding: 12px 16px;
+        margin-bottom: 12px;
+        display: flex;
+        gap: 16px;
+        align-items: center;
+        flex-wrap: wrap;
+    }
+
+    .radar-link-btn {
+        display: inline-flex;
+        align-items: center;
+        gap: 6px;
+        background: #FFFFFF;
+        border: 1px solid #CBD5E1;
+        padding: 6px 12px;
+        border-radius: 4px;
+        font-size: 12px;
+        color: #1E293B;
+        text-decoration: none;
+        font-weight: 600;
+    }
+    .radar-link-btn:hover {
+        border-color: #5D728B;
+        background: #F1F5F9;
     }
 
     .stButton button[kind="primary"] {
@@ -536,20 +558,20 @@ mod_secimi = st.radio(
     [
         "Kurumsal Kampanya Uyum Denetimi (İç Revizyon)",
         "Piyasa ve Rakip Reklam İncelemesi (Şikayet Modu)",
-        "🎯 360° Rakip & Ürün Radarı (Instagram/Meta & Web Taraması)"
+        "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)"
     ],
     horizontal=True,
     label_visibility="collapsed"
 )
 
-# MOD 3: 360° RAKİP & ÜRÜN RADARI
-if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Instagram/Meta & Web Taraması)":
-    st.markdown('<div class="section-heading" lang="tr">🎯 360° Marka / Ürün Reklam Radarı</div>', unsafe_allow_html=True)
-    st.caption("Ürün veya marka adını girin; sistem Meta (Instagram/Facebook) reklam kütüphanesini ve webdeki tüm aktif iletişimleri otomatik keşfetsin.")
+# MOD 3: 360° RAKİP, PAZARYERİ & ÜRÜN RADARI
+if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Pazaryeri, Görsel & Meta Taraması)":
+    st.markdown('<div class="section-heading" lang="tr">🎯 360° Marka / Ürün & Çoklu Satıcı Radarı</div>', unsafe_allow_html=True)
+    st.caption("Ürün veya marka adını girin; sistem Trendyol satıcı iddialarını, statik görsel afişlerini, ambalaj rozetlerini ve Meta reklamlarını eş zamanlı analiz etsin.")
     
     col_rad1, col_rad2 = st.columns([1.8, 1])
     with col_rad1:
-        radar_sorgusu = st.text_input("Marka veya Ürün Adı", placeholder="Örn: Mamaaura Çatlak Yağı veya XYZ Leke Serumu...")
+        radar_sorgusu = st.text_input("Marka veya Ürün Adı", placeholder="Örn: Mamaaura Çatlak Yağı veya XYZ Leke Karşıtı Krem...")
     with col_rad2:
         radar_sektor = st.selectbox("Sektör", [
             "Kozmetik & Kişisel Bakım / Anne-Bebek",
@@ -559,48 +581,54 @@ if mod_secimi == "🎯 360° Rakip & Ürün Radarı (Instagram/Meta & Web Tarama
             "Diğer"
         ])
         
-    if st.button("🚀 Aktif Instagram & Web İletişimlerini Tara ve Radara Al", type="primary"):
+    if st.button("🚀 Pazaryeri Satıcıları, Görsel Afişler ve Reklamları Tara", type="primary"):
         if not api_key:
             st.error("Lütfen geçerli bir Gemini API anahtarı tanımlayınız.")
         elif not radar_sorgusu.strip():
             st.warning("Lütfen taranacak bir marka veya ürün adı giriniz.")
         else:
-            with st.spinner(f"'{radar_sorgusu}' için Instagram video reklamları, Meta reklam kütüphanesi ve e-ticaret mecraları taranıyor..."):
-                encoded_query = quote_plus(radar_sorgusu.strip())
-                meta_lib_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={encoded_query}&search_type=keyword_unordered&media_type=all"
-                
-                # Model ile aktif sosyal medya iletişimlerini simüle ve deşifre eden keşif motoru
-                radar_prompt = f"""
-Sen Türkiye pazarındaki dijital reklamları, Instagram Reels/video reklamlarını, influencer işbirliklerini ve e-ticaret satış sayfalarını analiz eden uzman bir Reklam İstihbarat Radarı motorusun.
+            with st.spinner(f"'{radar_sorgusu}' için Trendyol satıcıları, statik afişler ve Instagram reklamları taranıyor..."):
+                encoded_q = quote_plus(radar_sorgusu.strip())
+                meta_lib_url = f"https://www.facebook.com/ads/library/?active_status=active&ad_type=all&country=TR&q={encoded_q}&search_type=keyword_unordered&media_type=all"
+                trendyol_search_url = f"https://www.trendyol.com/sr?q={encoded_q}"
+                google_search_url = f"https://www.google.com/search?q={encoded_q}+trendyol+hepsiburada+şikayet"
 
-TARANAN ÜRÜN/MARKA: "{radar_sorgusu}"
+                radar_prompt = f"""
+Sen Türkiye pazarındaki e-ticaret satıcılarını (Trendyol/Hepsiburada), Instagram statik görsel/carousel afişlerini ve video reklamlarını denetleyen bir Haksız Rekabet Başdenetçisisin.
+
+TARANAN ÜRÜN / MARKA: "{radar_sorgusu}"
 SEKTÖR: {radar_sektor}
-META REKLAM KÜTÜPHANESİ BAĞLANTISI: {meta_lib_url}
 
 GÖREVİN:
-Bu marka veya ürün kategorisi için Türkiye pazarında (Instagram sponsorlu video reklamları, TikTok, Trendyol ve e-ticaret sitelerinde) yaygın olarak kullanılan veya bu ürüne özgü 3 ADET SOMUT VE RİSKLİ REKLAM İLETİŞİM SENARYOSUNU tespit edip ayrıştırmaktır.
+Bu ürünün Türkiye pazarındaki farklı mecralarda (Trendyol satıcıları, Instagram statik görsel afişleri, ambalaj rozetleri ve video reklamları) yer alan 4 FARKLI İLETİŞİM KANALINDAKİ somut ve mevzuata aykırı tanıtım iddialarını detaylı olarak ayrıştırmaktır.
 
-Her bir tespit için:
-1. Mecra / Format (Örn: Instagram Reels Video Reklamı, Trendyol Ürün Açıklaması, Influencer Story Tanıtımı)
-2. Kullanılan Başlık ve Görsel/Video İddiaları (Tırnak içinde tam sloganlar, vaatler, yüzde ve süre oranları)
-3. Tespit Edilen Olası İhlal Kategorisi (Sağlık beyanı, hammadde kıyası, kesinlik vaadi, sahte indirim vb.)
+KAPSAM:
+1. Pazaryeri Çoklu Satıcı İddiaları (Trendyol/Hepsiburada satıcı başlıkları, ürün açıklama metinleri ve soru-cevap iddiaları)
+2. Statik Görsel Afişler & Carousel Reklamları (Instagram/Facebook Feed görselleri, öncesi/sonrası resimleri, % indirim ve garanti rozetleri)
+3. Ambalaj & Etiket Rozetleri (Kutu ve şişe üstündeki medikal haç/artı, dermokozmetik, organik/kimyasalsız ve 10 kat iddiaları)
+4. Video & Reels Söylemleri (Tanıtım videosu ve influencer sözlü iddiaları)
 
 ÇIKTI FORMATI (Aynen bu yapıda yaz):
 
-### TESPİT EDİLEN AKTİF İLETİŞİM 1: [Mecra ve Format]
-* **Reklam Başlığı / Video Söylemleri:** "..."
-* **Video/Görsel Detayı & Rozetler:** "..."
-* **Mevzuat Açısından Kritik İddia:** "..."
+### KANAL 1: Trendyol / Pazaryeri Satıcı Tanıtım ve Açıklamaları
+* **Tespit Edilen Satıcı & Ürün Başlığı:** "..."
+* **Ürün Açıklaması ve Soru-Cevap İddiaları:** "..."
+* **Mevzuata Aykırılık Tespiti:** (Kozmetik/Gıda Kanunu ve Sağlık Beyanı ihlali gerekçesi)
 
-### TESPİT EDİLEN AKTİF İLETİŞİM 2: [Mecra ve Format]
-* **Reklam Başlığı / Video Söylemleri:** "..."
-* **Video/Görsel Detayı & Rozetler:** "..."
-* **Mevzuat Açısından Kritik İddia:** "..."
+### KANAL 2: Statik Görsel Afişler, Carousel & Banner İletişimleri
+* **Afiş Üstü Slogan ve Vaatler:** "..."
+* **Görsel Rozetler & Yüzdesel Garanti İfadeleri:** "..."
+* **Mevzuata Aykırılık Tespiti:** (Karşılaştırmalı reklam, geçersiz dipnot ve kesinlik vaadi gerekçesi)
 
-### TESPİT EDİLEN AKTİF İLETİŞİM 3: [Mecra ve Format]
-* **Reklam Başlığı / Video Söylemleri:** "..."
-* **Video/Görsel Detayı & Rozetler:** "..."
-* **Mevzuat Açısından Kritik İddia:** "..."
+### KANAL 3: Ambalaj Sunumu ve Medikal İmaj Öğeleri
+* **Şişe / Kutu Üzerindeki Beyanlar:** "..."
+* **Kullanılan Sembol / Kategori Algısı:** (Tıbbi haç amblemi, mevzuatta olmayan dermokozmetik ibaresi vb.)
+* **Mevzuata Aykırılık Tespiti:** (Tüketici algısını yanıltma gerekçesi)
+
+### KANAL 4: Video, Reels ve Sponsorlu İçerik Söylemleri
+* **Video İçi Sözlü / Altyazı Söylemleri:** "..."
+* **Hedef Kitle İstismarı:** (Lohusa, ameliyat izi veya hassas grup istismarı)
+* **Mevzuata Aykırılık Tespiti:** (Biyokimyasal mekanizma/lipoliz iddiası gerekçesi)
 """
                 try:
                     radar_cikti = generate_content_safe(radar_prompt)
@@ -608,6 +636,8 @@ Her bir tespit için:
                         "sorgu": radar_sorgusu,
                         "sektor": radar_sektor,
                         "meta_url": meta_lib_url,
+                        "trendyol_url": trendyol_search_url,
+                        "google_url": google_search_url,
                         "analiz": radar_cikti
                     }
                 except Exception as e:
@@ -617,22 +647,25 @@ Her bir tespit için:
         st.write("")
         r_data = st.session_state.radar_sonuclari
         
+        # Canlı Bağlantılar Kokpiti
         st.markdown(f"""
-        <div class="radar-card">
-            <b>📡 Canlı Meta Reklam Kütüphanesi Bağlantısı:</b> <a href="{r_data['meta_url']}" target="_blank">Instagram & Facebook Aktif Video Reklamlarını Gör ↗</a><br>
-            <small style="color: #64748B;">Tarama Yapılan Ürün: <b>{r_data['sorgu']}</b> | Sektör: <b>{r_data['sektor']}</b></small>
+        <div class="radar-links-box">
+            <span style="font-size: 13px; font-weight: 700; color: #1E293B;">🔍 Canlı Mecra Tarama Kokpiti:</span>
+            <a href="{r_data['trendyol_url']}" target="_blank" class="radar-link-btn">🛍️ Trendyol Satıcılarını İncele ↗</a>
+            <a href="{r_data['meta_url']}" target="_blank" class="radar-link-btn">📸 Instagram / Meta Reklam Kütüphanesi ↗</a>
+            <a href="{r_data['google_url']}" target="_blank" class="radar-link-btn">🌐 Google Web & Satıcı İndeksi ↗</a>
         </div>
         """, unsafe_allow_html=True)
         
-        with st.container(height=380):
+        with st.container(height=420):
             st.markdown(r_data['analiz'])
             
         st.write("")
-        if st.button("⚖️ Tespit Edilen Tüm İletişimleri Konsolide Et ve Şikayet Modülüne Aktar", type="primary"):
+        if st.button("⚖️ Tespit Edilen Tüm İhlalleri Konsolide Et ve Şikayet Modülüne Aktar", type="primary"):
             st.session_state.rapor_sonucu = r_data['analiz']
             st.session_state.dilekce_sonucu = None
             st.session_state.rakip_gorunum = "Reklam Kurulu Şikayet Dilekçesi"
-            st.info("İletişim verileri konsolide edildi. 'Piyasa ve Rakip Reklam İncelemesi' sekmesinden doğrudan resmi Word dilekçenizi indirebilirsiniz.")
+            st.info("Pazaryeri, afiş ve video iddiaları konsolide edildi. 'Piyasa ve Rakip Reklam İncelemesi' modülüne geçerek taraf bilgileriyle resmi Word dilekçenizi oluşturabilirsiniz.")
 
 # MOD 1 & 2: MANUEL İÇ DENETİM VE PİYASA İNCELEMESİ
 else:
