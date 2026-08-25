@@ -17,7 +17,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# Kurumsal, Ortalanmış ve Alan Seçimli CSS Tasarımı
+# Kurumsal CSS ve Bağımsız Kayan Kutu (Scroll) Tasarımı
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&display=swap');
@@ -27,34 +27,34 @@ st.markdown("""
     }
     
     .block-container {
-        max-width: 1180px !important;
-        padding-top: 1.5rem !important;
-        padding-bottom: 2.5rem !important;
+        max-width: 1200px !important;
+        padding-top: 1.2rem !important;
+        padding-bottom: 2rem !important;
         margin: 0 auto !important;
     }
     
     .firm-header {
         background-color: #5D728B;
-        padding: 22px 30px;
+        padding: 18px 26px;
         border-radius: 6px;
         color: #ffffff;
         display: flex;
         justify-content: space-between;
         align-items: center;
-        margin-bottom: 24px;
+        margin-bottom: 18px;
         box-shadow: 0 4px 14px rgba(93, 114, 139, 0.18);
     }
     .firm-title {
         font-family: 'Cinzel', serif;
-        font-size: 20px;
+        font-size: 19px;
         letter-spacing: 1.5px;
         font-weight: 700;
     }
     .firm-subtitle {
-        font-size: 11.5px;
+        font-size: 11px;
         letter-spacing: 1px;
         color: #DCE4EC;
-        margin-top: 3px;
+        margin-top: 2px;
     }
     .firm-badge {
         background: rgba(255, 255, 255, 0.15);
@@ -62,28 +62,27 @@ st.markdown("""
         color: #ffffff;
         font-size: 11px;
         font-weight: 600;
-        padding: 6px 14px;
+        padding: 5px 12px;
         border-radius: 4px;
-        letter-spacing: 0.8px;
     }
 
     .mode-header-title {
         text-align: center;
         font-family: 'Cinzel', serif;
-        font-size: 14.5px;
+        font-size: 13.5px;
         letter-spacing: 1.5px;
         color: #2C3848;
         font-weight: 700;
-        margin-bottom: 14px;
+        margin-bottom: 10px;
         text-transform: uppercase;
     }
 
     div[data-testid="stRadio"] > div[role="radiogroup"] {
         display: flex;
         justify-content: center;
-        gap: 16px;
+        gap: 14px;
         width: 100%;
-        margin-bottom: 12px;
+        margin-bottom: 10px;
     }
 
     div[data-testid="stRadio"] > div[role="radiogroup"] > label {
@@ -91,14 +90,13 @@ st.markdown("""
         background: #FFFFFF;
         border: 1.5px solid #CBD5E1;
         border-radius: 6px;
-        padding: 16px 20px;
+        padding: 12px 18px;
         cursor: pointer;
         transition: all 0.2s ease;
         text-align: center;
         display: flex;
         align-items: center;
         justify-content: center;
-        box-shadow: 0 1px 3px rgba(0,0,0,0.03);
     }
 
     div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child {
@@ -113,37 +111,45 @@ st.markdown("""
     div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) {
         border-color: #5D728B !important;
         background-color: #F1F5F9 !important;
-        box-shadow: 0 0 0 1px #5D728B, 0 4px 10px rgba(93, 114, 139, 0.12) !important;
+        box-shadow: 0 0 0 1px #5D728B, 0 3px 8px rgba(93, 114, 139, 0.12) !important;
         font-weight: 600 !important;
         color: #1E293B !important;
     }
 
     .section-heading {
         font-family: 'Cinzel', serif;
-        font-size: 14px;
+        font-size: 13.5px;
         letter-spacing: 1px;
         color: #2C3848;
         font-weight: 700;
-        margin-bottom: 14px;
+        margin-bottom: 12px;
         border-bottom: 2px solid #E2E8F0;
-        padding-bottom: 6px;
+        padding-bottom: 5px;
     }
 
     .stButton button[kind="primary"] {
         background-color: #5D728B !important;
         color: #ffffff !important;
-        font-family: 'Plus Jakarta Sans', sans-serif !important;
-        letter-spacing: 0.5px !important;
         border-radius: 4px !important;
         border: 1px solid #4D6076 !important;
-        padding: 12px 24px !important;
+        padding: 10px 20px !important;
         font-weight: 600 !important;
         width: 100%;
         transition: all 0.2s ease;
     }
     .stButton button[kind="primary"]:hover {
         background-color: #4A5E74 !important;
-        box-shadow: 0 4px 12px rgba(74, 94, 116, 0.25) !important;
+    }
+
+    /* Özel Scrollbar Çizgileri */
+    div[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar,
+    div[data-testid="stChatMessageContainer"]::-webkit-scrollbar {
+        width: 6px;
+    }
+    div[data-testid="stVerticalBlockBorderWrapper"]::-webkit-scrollbar-thumb,
+    div[data-testid="stChatMessageContainer"]::-webkit-scrollbar-thumb {
+        background-color: #cbd5e1;
+        border-radius: 4px;
     }
 </style>
 """, unsafe_allow_html=True)
@@ -165,14 +171,12 @@ if not api_key:
         st.header("Sistem Ayarları")
         api_key = st.text_input("Gemini API Key:", type="password")
 
-# Hızlı Görsel Optimizasyonu
 def optimize_image(img, max_dimension=1024):
     img = img.convert("RGB")
     if max(img.size) > max_dimension:
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# Güvenli ve Dinamik Model Yönetimi
 def get_prioritized_models():
     if not api_key:
         return ["models/gemini-2.5-flash", "models/gemini-2.0-flash", "models/gemini-1.5-flash"]
@@ -222,7 +226,6 @@ def generate_content_safe(contents, system_instruction=None):
             continue
     raise Exception(f"Aktif modellerle bağlantı kurulamadı. Hata: {last_err}")
 
-# Paralel Web Görseli ve Metin Kazıyıcı
 def download_single_img(url, headers):
     try:
         res = requests.get(url, headers=headers, timeout=4)
@@ -406,7 +409,7 @@ if "dilekce_sonucu" not in st.session_state:
 if "chat_history" not in st.session_state:
     st.session_state.chat_history = []
 
-# Ortalanmış Başlık ve Alan İşaretli Seçim Kartları
+# Ortalanmış Başlık ve Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
 
 mod_secimi = st.radio(
@@ -530,21 +533,18 @@ Ayrıştırılan her bir unsuru aşağıdaki 6 evrensel mevzuat filtresine tabi 
                 if is_danisan:
                     prompt = sistem_metodolojisi + f"""
 GÖREVİN:
-İç denetim ve risk yönetimi amacıyla, kampanyanın tüm iddialarını (büyük manşetlerden en küçük ambalaj rozetlerine kadar) derinlemesine denetleyen, mevzuat gerekçelerini somutlaştıran ve CEZAİ RİSKİ SIFIRLAYAN GÜVENLİ REVİZYON METİNLERİ sunan kapsamlı bir 'Mevzuat Uyum ve Revizyon Raporu' hazırlamaktır.
+İç denetim ve risk yönetimi amacıyla, kampanyanın tüm iddialarını derinlemesine denetleyen, mevzuat gerekçelerini somutlaştıran ve CEZAİ RİSKİ SIFIRLAYAN GÜVENLİ REVİZYON METİNLERİ sunan kapsamlı bir 'Mevzuat Uyum ve Revizyon Raporu' hazırlamaktır.
 
 RAPOR FORMATI:
 
 ### [RİSK DERECESİ: YÜKSEK (KIRMIZI) / ORTA (SARI) / DÜŞÜK (YEŞİL)] - Risk Skoru: [0-100]
 
 ### I. MEVZUAT UYUM ANALİZİ VE TESPİT EDİLEN RİSKLİ İDDİALAR
-(Görseldeki ve metindeki TÜM iddiaları -başlıklar, ambalaj yazıları ve mikro rozetler dahil- tek tek maddeleştirerek açıkla):
 * **[Tespit Edilen İddia / Rozet / İfade 1]:** (Hangi mevzuat maddesini ihlal ediyor? Ortalama tüketici algısı ve ispat yükü nedir?)
 * **[Tespit Edilen İddia / Rozet / İfade 2]:**
 * **[Tespit Edilen İddia / Rozet / İfade 3]:**
-* **[Tespit Edilen İddia / Rozet / İfade 4]:**
 
 ### II. REKLAM KURULU EMSAL KARARLARI VE CEZA EŞLEŞMELERİ
-(Arşivdeki emsal metinlerden tespit edilen somut kararlardan EN AZ 2 ADET karar künyesini şu formatta ver):
 * **Emsal Karar 1:**
   - **Dosya No & Karar Tarihi:**
   - **Firma / Mecra:** 
@@ -561,11 +561,11 @@ RAPOR FORMATI:
 ### III. ÖNGÖRÜLEN İDARİ PARA CEZASI VE RİSK SKALASI
 * **Yayın Mecrası:** {mecra}
 * **6502 Sayılı Kanun Md. 77 Ceza Aralığı:** (Mecraya göre geçerli idari para cezası limitleri)
-* **Diğer Yaptırımlar:** (Durdurma, düzeltme, satış noktasından toplatma veya içerik çıkarma riski)
+* **Diğer Yaptırımlar:** (Durdurma, düzeltme, toplatma veya içerik çıkarma riski)
 
 ### IV. GÜVENLİ VE TİCARİ ETKİSİ YÜKSEK REVİZE METİN
-* **Önerilen Güvenli Reklam Metni & Rozet Alternatifleri:** (Cezai riski sıfırlayan ancak reklamın satış gücünü koruyan alternatifler)
-* **Gereken İspat / Dipnot Standartları:** (Hazır bulundurulması gereken test raporları veya ambalaj altı yasal dipnot standardı)
+* **Önerilen Güvenli Reklam Metni & Rozet Alternatifleri:**
+* **Gereken İspat / Dipnot Standartları:**
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
@@ -573,21 +573,18 @@ RAPOR FORMATI:
                 else:
                     prompt = sistem_metodolojisi + f"""
 GÖREVİN:
-Pazardaki rakip tanıtımın veya satış noktası materyalinin içerdiği TÜM hukuka aykırılıkları (büyük slogandan en küçük 'içermez' rozetine veya ambalaj vaadine kadar) tek tek deşifre eden, haksız rekabet ve tüketici aldatmacasını kanıtlayan derinlemesine bir 'Piyasa İhlal Raporu' hazırlamaktır.
+Pazardaki rakip tanıtımın veya satış noktası materyalinin içerdiği TÜM hukuka aykırılıkları tek tek deşifre eden, haksız rekabet ve tüketici aldatmacasını kanıtlayan derinlemesine bir 'Piyasa İhlal Raporu' hazırlamaktır.
 
 RAPOR FORMATI:
 
 ### [İHLAL DERECESİ: AĞIR (KIRMIZI) / ORTA (SARI) / HAFİF (YEŞİL)] - İhlal Skoru: [0-100]
 
 ### I. HAKSIZ REKABET VE MEVZUATA AYKIRILIK TESPİTİ
-(Materyaldeki TÜM unsurları -ana slogan, ambalaj iddiaları, mikro rozetler ve içerik beyanları- 6502 md. 61, TTK md. 54-55 ve Kılavuzlar kapsamında ayrı ayrı gerekçelendir):
-* **[Hukuka Aykırı İfade / Rozet / Uygulama 1]:** (Haksız ticari uygulama ve yanıltıcı niteliği)
+* **[Hukuka Aykırı İfade / Rozet / Uygulama 1]:**
 * **[Hukuka Aykırı İfade / Rozet / Uygulama 2]:**
 * **[Hukuka Aykırı İfade / Rozet / Uygulama 3]:**
-* **[Hukuka Aykırı İfade / Rozet / Uygulama 4]:**
 
 ### II. REKLAM KURULU EMSAL İÇTİHATLARI
-(Rakibin kullandığı ifadelere benzer iddialara Kurul'un daha önce verdiği EN AZ 2 ADET emsal kararı künyesiyle sun):
 * **Emsal Karar 1:**
   - **Dosya No & Karar Tarihi:**
   - **Ceza Alan Şirket / Mecra:**
@@ -602,12 +599,12 @@ RAPOR FORMATI:
   - **Uygulanan Yaptırım:**
 
 ### III. RAKİBE UYGULANABİLECEK İDARİ YAPTIRIMLAR
-* **6502 Sayılı Kanun Md. 77 Para Cezası:** (Mecraya göre uygulanacak ceza tutarı)
-* **İdari Tedbirler:** (Reklamı durdurma, düzeltme, stant/materyallerin toplatılması, içerik çıkarma / erişim engeli)
+* **6502 Sayılı Kanun Md. 77 Para Cezası:**
+* **İdari Tedbirler:** (Durdurma, toplatma vb.)
 
 ### IV. ŞİKAYET VE BAŞVURU STRATEJİSİ
-* **Reklam Kurulu Başvuru Dayanakları:** (Dilekçede öne çıkarılacak en güçlü argümanlar ve teknik savunma hattı)
-* **Gereken Delil Tespiti:** (Noter tespiti, stant fotoğrafları, URL kaydı, arşiv tespiti vb.)
+* **Reklam Kurulu Başvuru Dayanakları:**
+* **Gereken Delil Tespiti:**
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, somut uyuşmazlıklarda nihai hukuki mütalaa yerine geçmez."
@@ -621,7 +618,6 @@ RAPOR FORMATI:
                     for wg in web_gorselleri:
                         icerik_listesi.append(wg)
 
-                # Canlı Akış (Streaming) İle Çıktı Üretimi
                 rapor_alani = st.empty()
                 try:
                     tam_rapor = ""
@@ -630,7 +626,6 @@ RAPOR FORMATI:
                             tam_rapor += parca
                             rapor_alani.markdown(tam_rapor + "▌")
                     
-                    # Çift basımı önlemek için canlı akış alanını temizliyoruz
                     rapor_alani.empty()
                     
                     st.session_state.rapor_sonucu = tam_rapor
@@ -639,10 +634,13 @@ RAPOR FORMATI:
                 except Exception as err:
                     st.error(f"Analiz sırasında bir hata oluştu: {err}")
 
-        # Sonuçların ve Sekmelerin Gösterimi
+        # Sonuçların ve Kaydırılabilir Rapor Kutusunun Gösterimi
         if st.session_state.rapor_sonucu:
             if is_danisan:
-                st.markdown(st.session_state.rapor_sonucu)
+                # Sabit Yükseklikte Kendi İçinde Kayan Rapor Kutusu
+                with st.container(height=480):
+                    st.markdown(st.session_state.rapor_sonucu)
+                
                 try:
                     pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Reklam Uyum ve Risk Raporu")
                     st.download_button(
@@ -658,7 +656,10 @@ RAPOR FORMATI:
                 tab_ihlal, tab_dilekce = st.tabs(["Haksız Rekabet ve İhlal Raporu", "Reklam Kurulu Şikayet Dilekçesi"])
                 
                 with tab_ihlal:
-                    st.markdown(st.session_state.rapor_sonucu)
+                    # Sabit Yükseklikte Kendi İçinde Kayan İhlal Kutusu
+                    with st.container(height=480):
+                        st.markdown(st.session_state.rapor_sonucu)
+                    
                     try:
                         pdf_verisi = create_pdf(st.session_state.rapor_sonucu, "AdShield - Rakip Reklam İhlal Raporu")
                         st.download_button(
@@ -672,61 +673,40 @@ RAPOR FORMATI:
                         st.warning(f"PDF uyarısı: {e}")
 
                 with tab_dilekce:
-                    st.caption("İncelenen rakip tanıtım hakkında Reklam Kurulu Başkanlığı'na sunulmak üzere doğrudan resmi başvuru formatında dilekçe oluşturur.")
+                    st.caption("İncelenen rakip tanıtım hakkında Reklam Kurulu Başkanlığı'na sunulmak üzere resmi formatta dilekçe oluşturur.")
                     
                     if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla"):
                         with st.spinner("Şikayet dilekçesi hazırlanıyor..."):
                             try:
                                 dilekce_prompt = f"""
-Sen tüketici hukuku, haksız rekabet ve reklam regülasyonları konusunda uzmanlaşmış kıdemli bir Hukuk Müşavirisin.
-Aşağıda incelenen rakip iletişim vakıası, tespit edilen ihlaller (büyük sloganlar, ambalaj iddiaları ve mikro rozetler) ve emsal veriler yer almaktadır:
-
+Sen tüketici hukuku ve reklam regülasyonları konusunda uzmanlaşmış kıdemli bir Hukuk Müşavirisin.
 İNCELEME RAPORU VE VAKIA VERİSİ:
 {st.session_state.rapor_sonucu}
 
 GÖREVİN:
-Yapay zeka robotik şablonlarından (örn: '1. MADDİ VAKIALAR', '2. HUKUKİ DELİLLER' gibi soyut kalıplardan) tamamen uzak; Türk idari yargı ve Reklam Kurulu pratiğinde tecrübeli bir hukukçunun kaleme aldığı gibi **AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN**, net, akıcı ve 4 ana maddeden oluşan bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
+AÇIKLAMALAR BÖLÜMÜNDEKİ HER MADDENİN BAŞLIĞI DOĞRUDAN SOMUT VAKIADAKİ İHLALİ ANLATAN TAM BİR CÜMLE OLAN 4 maddeli bir ŞİKAYET DİLEKÇESİ hazırlamaktır.
 
-DİLEKÇEYİ AYNEN AŞAĞIDAKİ YAPI VE DİLDE OLUŞTUR:
-
+DİLEKÇE FORMATI:
 T.C. TİCARET BAKANLIĞI
-REKLAM KURULU BAŞKANLIĞINA
-ANKARA
-
-ŞİKAYET EDEN : [Şikayet Eden Şirket / Marka Unvanı]
-ADRES : [Şirket Adresi]
-YETKİLİ / VEKİL : [Şirket Temsilcisi / Hukuk Müşaviri / Vekil]
-ŞİKAYET EDİLEN : [Şikayet Edilen Firma / Satıcı / Hesap Bilgisi]
-ADRES : [Şikayet Edilen Adres / İnternet Sitesi / Mecra]
-ŞİKAYET KONUSU : Şikayet edilen tarafça yürütülen tanıtımlarda yer alan tüketiciyi yanıltıcı, haksız rekabete yol açıcı ve mevzuata aykırı nitelikteki iddialar (özellikle ana başlıklar, ambalaj vaatleri ve 'içermez' rozetleri) nedeniyle idari yaptırım uygulanması ve anılan reklamların durdurulması talebidir.
-
+REKLAM KURULU BAŞKANLIĞINA ANKARA
+ŞİKAYET EDEN : [Şirket Unvanı]
+ŞİKAYET EDİLEN : [Şikayet Edilen]
 AÇIKLAMALAR:
-
-1. [ŞİKAYET EDİLENİN TANITIM, STAND VE AMBALAJLARDA KULLANDIĞI SOMUT İDDİALARIN YANILTICI NİTELİĞİNİ ANLATAN TAM BİR CÜMLE BAŞLIK]:
-(Şikayet edilenin tanıtımlarında hangi somut iddiaları, tırnak içi ifadeleri ve rozetleri kullandığı, bu tanıtımın nerede tespit edildiği ve ortalama tüketici nezdinde nasıl haksız bir algı yarattığı).
-
-2. [İNCELENEN ÜRÜN KATEGORİSİNİN BİLİMSEL / SEKTÖREL GERÇEKLİĞİ KARŞISINDA BU İDDİALARIN İMKANSIZ VEYA STANDART BİR ZORUNLULUK OLDUĞUNU BELİRTEN TAM BİR CÜMLE BAŞLIK]:
-(Ürünün doğası, kimyasal/teknik içeriği veya kullanım amacı gereği vaat edilen etkinin neden gerçeğe aykırı olduğu veya kategorideki tüm ürünlerde zaten bulunması/bulunmaması gereken standart bir özelliğin münhasır bir üstünlük gibi sunulduğu).
-
-3. [TİTCK / TGK KILAVUZLARI VE SEKTÖREL DÜZENLEMELER UYARINCA BU TÜR İDDİA VE ROZETLERİN YASAKLANDIĞINI GÖSTEREN TAM BİR CÜMLE BAŞLIK]:
-(İlgili Kılavuz hükümleri uyarınca ürünün sahip olmadığı veya kategorideki tüm ürünlerde zaten mevcut olan genel özelliklerin yalnızca kendisine aitmiş gibi sunulamayacağı ve izin verilmeyen sağlık/üstünlük beyanlarının kullanılamayacağı ilkesi).
-
-4. [6502 SAYILI KANUN VE TİCARİ REKLAM YÖNETMELİĞİ UYARINCA SÖZ KONUSU TANITIMLARIN HAKSIZ REKABET VE ALDATICI REKLAM TEŞKİL ETTİĞİNİ İZAH EDEN TAM BİR CÜMLE BAŞLIK]:
-(6502 sayılı Kanun md. 61 ile Ticari Reklam Yönetmeliği md. 7, 9, 10, 11 uyarınca tüketicinin bilgi eksikliğinin istismar edildiği, dürüst rakiplerin haksız yere şaibe altında bırakıldığı ve pazardaki dürüst rekabet ortamının bozulduğu).
-
-SONUÇ VE İSTEM : Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayınının tedbiren ve nihai olarak DURDURULMASINA, yayından kaldırılmasına ve sorumlu şirket/şahıs hakkında en üst hadden İDARİ PARA CEZASI ile cezalandırılmasına karar verilmesini saygılarımızla arz ve talep ederiz.
-
-[Şikayet Eden Şirket Unvanı]
-Yetkilisi / Vekili
+1. [İHLAL BAŞLIĞI]: (...)
+2. [İHLAL BAŞLIĞI]: (...)
+3. [İHLAL BAŞLIĞI]: (...)
+4. [İHLAL BAŞLIĞI]: (...)
+SONUÇ VE İSTEM : (...)
 """
                                 st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
                             except Exception as e:
                                 st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
 
                     if st.session_state.dilekce_sonucu:
-                        st.markdown(st.session_state.dilekce_sonucu)
+                        with st.container(height=420):
+                            st.markdown(st.session_state.dilekce_sonucu)
                         try:
-                            dilekce_pdf = create_pdf(st.session_state.dilekce_sonucu, "T.C. Ticaret Bakanligi Reklam Kurulu Baskanligi Sikayet Dilekcesi")
+                            dilekce_pdf = create_pdf(st.session_state.dilekce_sonucu, "T.C. Ticaret Bakanligi Reklam Kurulu Sikayet Dilekcesi")
                             st.download_button(
                                 label="Şikayet Dilekçesini İndir (PDF)",
                                 data=dilekce_pdf,
@@ -739,36 +719,47 @@ Yetkilisi / Vekili
         else:
             st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
 
-# İnteraktif Danışman Paneli
+# İnteraktif Chatbot Arayüzü (Doğal Konuşma Akışı)
 if st.session_state.rapor_sonucu:
     st.write("")
     with st.container(border=True):
-        st.markdown('<div class="section-heading" lang="tr">Mevzuat Danışmanı ve Soru-Cevap</div>', unsafe_allow_html=True)
-        st.caption("Üretilen rapora, emsal dosyalara veya stratejik adımlara ilişkin sorularınızı iletebilirsiniz.")
+        st.markdown('<div class="section-heading" lang="tr">💬 AdShield Mevzuat Asistanı</div>', unsafe_allow_html=True)
+        st.caption("Raporlanan riskler, emsal dosyalar veya alternatif revizyon stratejileri hakkında sorularınızı sorabilirsiniz.")
 
-        for msg in st.session_state.chat_history:
-            with st.chat_message(msg["role"]):
-                st.markdown(msg["content"])
+        # Sohbet geçmişini sabit yükseklikte, kendi içinde kayan kutuda göster
+        chat_container = st.container(height=360)
+        with chat_container:
+            if not st.session_state.chat_history:
+                st.info("Henüz bir soru sormadınız. Aşağıdaki kutudan raporla ilgili dilediğiniz soruyu yazabilirsiniz.")
+            
+            for msg in st.session_state.chat_history:
+                with st.chat_message(msg["role"]):
+                    st.markdown(msg["content"])
 
-        kullanici_sorusu = st.chat_input("Sorunuzu buraya yazınız...")
-        if kullanici_sorusu:
+        # Soru Giriş Alanı
+        if kullanici_sorusu := st.chat_input("Raporla ilgili bir soru yazın (Örn: 'Alternatif sloganı Instagram story formatına uyarla')..."):
+            # Kullanıcı sorusunu ekle ve göster
             st.session_state.chat_history.append({"role": "user", "content": kullanici_sorusu})
-            with st.chat_message("user"):
-                st.markdown(kullanici_sorusu)
+            with chat_container:
+                with st.chat_message("user"):
+                    st.markdown(kullanici_sorusu)
 
-            with st.chat_message("assistant"):
-                with st.spinner("Değerlendiriliyor..."):
-                    try:
-                        chat_instruction = f"""
-Sen kurumsal reklam mevzuatı ve Reklam Kurulu içtihatları konusunda uzmanlaşmış bir Uyum Danışmanısın.
+                # Yanıtı hazırla ve göster
+                with st.chat_message("assistant"):
+                    with st.spinner("Mevzuat içtihadı değerlendiriliyor..."):
+                        try:
+                            chat_instruction = f"""
+Sen kurumsal reklam hukuku ve Reklam Kurulu içtihatları konusunda uzmanlaşmış bir Uyum Danışmanısın.
 Kullanıcı seçilen mod ({'Kampanya Uyum Modu' if is_danisan else 'Rakip Şikayet Modu'}) kapsamında sorular soruyor.
-Rapor: {st.session_state.rapor_sonucu}
-Metin: {reklam_metni}
-Soruyu doğrudan mevzuat ve içtihat ışığında yanıtla.
+Rapor Verisi:
+{st.session_state.rapor_sonucu}
+
+Kullanıcının sorularını bu raporu ve Türk reklam mevzuatını esas alarak net, doğrudan ve profesyonel bir üslupla yanıtla.
 """
-                        sohbet_gecmisi_prompt = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in st.session_state.chat_history])
-                        cevap_metni = generate_content_safe(sohbet_gecmisi_prompt, system_instruction=chat_instruction)
-                        st.markdown(cevap_metni)
-                        st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
-                    except Exception as e:
-                        st.error(f"Hata: {e}")
+                            sohbet_gecmisi_prompt = "\n".join([f"{h['role'].upper()}: {h['content']}" for h in st.session_state.chat_history])
+                            cevap_metni = generate_content_safe(sohbet_gecmisi_prompt, system_instruction=chat_instruction)
+                            st.markdown(cevap_metni)
+                            st.session_state.chat_history.append({"role": "assistant", "content": cevap_metni})
+                        except Exception as e:
+                            st.error(f"Hata: {e}")
+            st.rerun()
