@@ -16,6 +16,7 @@ import urllib.parse
 from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
 import textwrap
+import time  # <-- YENİ: API Hız Sınırı Koruması İçin
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -210,7 +211,6 @@ def optimize_image(img, max_dimension=800):
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
     return img
 
-# --- KESİN VE SABİT MODEL TANIMI (API'NİN İSTEDİĞİ SON SÜRÜM) ---
 TARGET_MODEL = "gemini-3.6-flash"
 
 def get_working_model(system_instruction=None):
@@ -229,6 +229,7 @@ def generate_content_safe(contents, system_instruction=None):
     except Exception as e:
         raise Exception(f"API Hatası ({TARGET_MODEL}): {e}")
 
+# --- API LİMİT KORUMALI ÇOKLU ROL SENTEZİ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -242,8 +243,14 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     
     try:
         model = get_working_model()
+        
+        # 1. Sorgu ve Bekleme
         r1 = model.generate_content(payload_1)
+        time.sleep(3)  # API Hız Sınırı (429) Koruma Molası
+        
+        # 2. Sorgu ve Bekleme
         r2 = model.generate_content(payload_2)
+        time.sleep(3)  # API Hız Sınırı (429) Koruma Molası
         
         if r1 and r1.text and r2 and r2.text:
             analysis_1 = r1.text
@@ -252,7 +259,7 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
             yield f"Analiz başlatılamadı. Model ({TARGET_MODEL}) eksik yanıt döndürdü."
             return
     except Exception as e:
-        yield f"Analiz başlatılamadı. Lütfen model limitlerinizi kontrol edin. Hata ({TARGET_MODEL}): {e}"
+        yield f"Analiz başlatılamadı. Lütfen model limitlerinizi kontrol edin. Hata: {e}"
         return
 
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
@@ -429,7 +436,6 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
-# --- GÜNCELLENMİŞ EMSAL BULUCU ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi.", []
@@ -458,7 +464,6 @@ def get_relevant_emsaller(metin, sektor, top_k=3):
     birlestirilmis_emsal_str = "\n\n--- [EMSAL KARAR METNİ] ---\n\n".join(secilenler_metin)
     return birlestirilmis_emsal_str, secilenler_metin
 
-# --- FPDF ÇÖKMESİNİ ENGELLEYEN TEXTWRAP MOTORU ---
 def create_pdf(report_text, baslik_metni):
     pdf = FPDF()
     pdf.set_auto_page_break(auto=True, margin=15)
@@ -619,7 +624,7 @@ def create_docx(dilekce_text):
     docx_io.seek(0)
     return docx_io.getvalue()
 
-# Session State Tanımları
+# Session State
 if "rapor_sonucu" not in st.session_state:
     st.session_state.rapor_sonucu = None
 if "dilekce_sonucu" not in st.session_state:
