@@ -305,14 +305,15 @@ def fetch_url_data(url):
         
     return clean_text, downloaded_images
 
-# --- HASSAS DOĞRULAMALI LİNK MOTORU ---
+# --- DOĞAL VE HASSAS DOĞRULAMALI LİNK MOTORU ---
 def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
-    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=30"
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=40"
     
-    YASAKLI_DIZINLER = ["/en/", "/ar/", "/de/", "/giris", "/odn/", "/hesabim", "/sr?", "/ara?", "/search?", "/butik/"]
+    YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
+    YASAKLI_GIYIM = ["elbise", "pantolon", "etek", "tulum", "ayakkabi", "ayakkabı", "bluz", "pijama", "sütyen", "külot", "triko", "kazak"]
     
     try:
-        response = requests.get(url, timeout=6)
+        response = requests.get(url, timeout=7)
         data = response.json()
         link_havuzu = []
         if "organic_results" in data:
@@ -323,26 +324,35 @@ def tekil_sorgu_at(kategori, sorgu, ana_marka_slug, api_key_val):
                 
                 url_lower = link.lower()
                 title_lower = title.lower()
+                snippet_lower = snippet.lower()
                 
-                # 1. Yasaklı sistem/global uzantıları ele
+                # 1. Genel arama/giriş sayfalarını ele
                 if any(yd in url_lower for yd in YASAKLI_DIZINLER):
                     continue
                 
-                # 2. Trendyol Doğrulaması: Linkte -p- olmalı ve marka URL'de veya başlıkta yer almalı
+                # 2. Instagram dışındaki kanallarda alakasız tekstil/giyim ürünlerini ele
+                if "instagram.com" not in url_lower:
+                    if any(yg in url_lower or yg in title_lower for yg in YASAKLI_GIYIM):
+                        continue
+
+                # 3. Trendyol Doğrulaması (Yalnızca tekil -p- sayfaları)
                 if "trendyol.com" in url_lower:
                     if "-p-" not in url_lower:
                         continue
-                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower):
+                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower and ana_marka_slug not in snippet_lower):
                         continue
 
-                # 3. Hepsiburada Doğrulaması: Arama ve kategori sayfalarını ele
+                # 4. Hepsiburada Doğrulaması (Arama ve kategori sayfalarını ele)
                 if "hepsiburada.com" in url_lower:
-                    if any(c in url_lower for c in ["/ara?", "/kategori/", "/kampanyalar/"]):
+                    if any(c in url_lower for c in ["/ara?", "/kategori/"]):
+                        continue
+                    if ana_marka_slug and (ana_marka_slug not in url_lower and ana_marka_slug not in title_lower and ana_marka_slug not in snippet_lower):
                         continue
 
-                # 4. Amazon Doğrulaması
-                if "amazon.com.tr" in url_lower and "/dp/" not in url_lower and "/gp/" not in url_lower:
-                    continue
+                # 5. Amazon Türkiye Doğrulaması (Tekil ürün /dp/ kontrolü)
+                if "amazon.com.tr" in url_lower:
+                    if "/dp/" not in url_lower and "/gp/product/" not in url_lower:
+                        continue
 
                 link_havuzu.append({
                     "baslik": title,
@@ -363,22 +373,20 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     
     marka_slug = ana_marka.lower().replace(" ", "").replace("ı", "i").replace("ş", "s").replace("ç", "c").replace("ö", "o").replace("ü", "u").replace("ğ", "g")
     
-    # Alan adını normalize et (https://, www. ve slash temizliği)
     temiz_domain = ""
     if marka_domain and marka_domain.strip():
         temiz_domain = re.sub(r'^https?://', '', marka_domain.strip()).split('/')[0].replace('www.', '').strip()
     
-    cop_filtre = "-inurl:/en/ -inurl:/ar/ -inurl:/de/ -inurl:/giris -inurl:/odn/ -elbise -giyim -pantolon"
-    
+    # 8 Kollu Bağımsız ve Temiz Radar Matrisi
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{ana_marka}" {cop_filtre}',
-        "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com "{ana_marka}" -inurl:/ara -inurl:/kategori -elbise -giyim',
-        "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr inurl:/dp/ "{ana_marka}" {cop_filtre}',
-        "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain} OR site:*.{temiz_domain}' if temiz_domain else f'"{ana_marka}" (site:.com OR site:.com.tr) (inurl:products OR inurl:urun OR inurl:koleksiyon OR inurl:shop)',
-        "📱 Instagram Reels & Video Akışı": f'(site:instagram.com/reel/ OR site:instagram.com/p/) "{ana_marka}"',
-        "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com "{ana_marka}" ("#işbirliği" OR "#isbirligi" OR "#reklam" OR "#sponsor" OR "#hediye" OR "linki bioya" OR "indirim kodu")',
-        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com "{ana_marka}" ("#öncesisonrası" OR "#beforeafter" OR "mucize" OR "tedavi" OR "yok etti" OR "kesin sonuç" OR "çatlak tedavisi" OR "leke tedavisi")',
-        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com ("#{ana_marka}kullananlar" OR "#{ana_marka}deneyimi" OR "#{ana_marka}yorum" OR "#{ana_marka}tavsiye" OR "#{ana_marka}inceleme")'
+        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com "{ana_marka}"',
+        "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com "{ana_marka}"',
+        "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr "{ana_marka}"',
+        "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain}' if temiz_domain else f'"{ana_marka}" (site:.com OR site:.com.tr)',
+        "📱 Instagram Reels & Video Akışı": f'site:instagram.com "{ana_marka}" (inurl:reel OR inurl:/p/)',
+        "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com "{ana_marka}" (işbirliği OR reklam OR sponsor OR hediye OR "#işbirliği" OR "#reklam" OR "indirim kodu")',
+        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com "{ana_marka}" ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR "çatlak" OR "leke" OR "sonuç")',
+        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com "{ana_marka}" (kullananlar OR deneyim OR tavsiye OR yorum OR inceleme)'
     }
     
     kategorize_sonuclar = {}
@@ -969,10 +977,10 @@ else:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">📡 Hedefli Ürün & Sosyal Medya Radarı</div>', unsafe_allow_html=True)
             
-            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: The Purest Solutions leke serumu...")
-            radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: thepurestsolutions.com")
+            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="mamaaura çatlak ve selülit yağı", placeholder="Örn: incia bebek yağı veya the purest solutions...")
+            radar_domain = st.text_input("Markanın Resmi Domaini (Opsiyonel)", value="mamaaura.com", placeholder="Örn: incia.com.tr")
             
-            st.caption("ℹ️ Bu radar; Trendyol, Hepsiburada, Amazon, marka resmi sitesi ve Instagram ihlal etiketlerini eşzamanlı olarak tarar.")
+            st.caption("ℹ️ Bu radar; Trendyol, Hepsiburada, Amazon, resmi site ve Instagram kanallarını temiz dorklarla paralel tarayarak hedef URL havuzunu oluşturur.")
             radar_tara_butonu = st.button("🚀 Hedef Linkleri ve İçerikleri Tespit Et", type="primary")
 
     with sag_kolon:
@@ -986,7 +994,7 @@ else:
                 elif not radar_urun:
                     st.warning("Lütfen taranacak marka veya ürün adını giriniz.")
                 else:
-                    with st.spinner("Pazaryerleri, resmi site ve Instagram içerikleri taranıyor..."):
+                    with st.spinner("Tüm pazaryerleri, resmi site ve Instagram içerikleri taranıyor..."):
                         sonuclar = gelismis_coklu_hedef_taramasi(radar_urun, radar_domain, serpapi_key)
                         st.session_state.radar_link_sonuclari = sonuclar
 
@@ -1007,7 +1015,7 @@ else:
                         else:
                             st.warning("Bu kategoride doğrudan bağlantı tespit edilemedi.")
             else:
-                st.info("Sol panelden taramayı başlattığınızda tespit edilen tüm tekil pazar yeri sayfaları, resmi site ürünleri ve Instagram içerikleri burada listelenecektir.")
+                st.info("Sol panelden taramayı başlattığınızda tespit edilen tüm tekil Trendyol, Hepsiburada, Amazon, resmi site ürünleri ve Instagram içerikleri burada listelenecektir.")
 
 # ==========================================
 # İNTERAKTİF CHATBOT (MEVZUAT ASİSTANI)
