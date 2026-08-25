@@ -210,7 +210,31 @@ def optimize_image(img, max_dimension=800):
     return img
 
 # --- YENİ NESİL MODEL YÖNETİMİ ---
-FAST_MODELS = ["gemini-3.6-flash", "gemini-pro", "gemini-flash"]
+FAST_MODELS = ["gemini-3.6-flash", "gemini-pro", "gemini-1.5-flash", "gemini-1.5-pro"]
+
+def get_working_model(system_instruction=None):
+    if not api_key:
+        raise Exception("API anahtarı bulunamadı.")
+    genai.configure(api_key=api_key)
+    
+    try:
+        for m in genai.list_models():
+            if 'generateContent' in m.supported_generation_methods:
+                model_name = m.name.replace('models/', '')
+                try:
+                    return genai.GenerativeModel(model_name=model_name, system_instruction=system_instruction)
+                except Exception:
+                    continue
+    except Exception:
+        pass
+        
+    for fallback in FAST_MODELS:
+        try:
+            return genai.GenerativeModel(model_name=fallback, system_instruction=system_instruction)
+        except Exception:
+            continue
+            
+    raise Exception("Kullanılabilir aktif bir Gemini modeli bulunamadı.")
 
 def generate_content_safe(contents, system_instruction=None):
     if not api_key:
@@ -244,12 +268,15 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
     working_model_name = None
     last_err = None
     
-    # Her modeli içerik üretimi üzerinden (generate_content) gerçek teste tabi tutuyoruz
+    # HATA ÇÖZÜMÜ: Listeleri düzleştiriyoruz (Flattening)
+    payload_1 = [prompt_p1] + contents
+    payload_2 = [prompt_p2] + contents
+    
     for model_name in FAST_MODELS:
         try:
             model = genai.GenerativeModel(model_name=model_name)
-            r1 = model.generate_content([prompt_p1, contents])
-            r2 = model.generate_content([prompt_p2, contents])
+            r1 = model.generate_content(payload_1)
+            r2 = model.generate_content(payload_2)
             
             if r1 and r1.text and r2 and r2.text:
                 analysis_1 = r1.text
@@ -261,7 +288,7 @@ def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_d
             continue
             
     if not analysis_1 or not analysis_2:
-        yield f"Analiz başlatılamadı. API Hatası: {last_err}"
+        yield f"Analiz başlatılamadı. Lütfen model limitlerinizi kontrol edin. Son Hata: {last_err}"
         return
 
     rapor_turu_adi = "Mevzuat Uyum ve Revizyon Raporu" if is_danisan else "Piyasa İhlal ve Şikayet Raporu"
