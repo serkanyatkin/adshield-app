@@ -212,7 +212,7 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
     apify_key = st.text_input("Apify API Key:", value=apify_key or "", type="password")
-    st.caption("ℹ️ Apify anahtarınızı buraya güvenle yapıştırabilirsiniz.")
+    st.caption("ℹ️ Apify ve SerpApi anahtarınızı buraya güvenle yapıştırabilirsiniz.")
 
 def optimize_image(img, max_dimension=2500):
     img = img.convert("RGB")
@@ -316,7 +316,6 @@ def fetch_instagram_via_apify(url, apify_token):
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
             caption = item.get("caption", "") or item.get("text", "")
             
-            # Çoklu görsel alan taraması (Görselin kaçmasını önler)
             display_url = (
                 item.get("displayUrl") or 
                 item.get("imageUrl") or 
@@ -419,13 +418,16 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val or not urun_adi.strip():
         return {}
     temiz_urun = urun_adi.strip()
+    
+    # YENİ NESİL SORGULAR: Şikayet siteleri yerine Instagram ve doğrudan ürün satış hedefleri
     queries = {
-        "🛒 Trendyol Satış Noktaları": f'{temiz_urun} trendyol satıcı fiyat',
-        "🛍️ Hepsiburada Ürün Sayfaları": f'{temiz_urun} hepsiburada',
-        "📦 E-Ticaret ve Pazar Yerleri": f'{temiz_urun} satın al sipariş',
-        "🌐 Resmi Web Sitesi & Bayiler": f'{temiz_urun} resmi site orjinal',
-        "💬 Tüketici Yorumları & Şikayetler": f'{temiz_urun} şikayet var kullanıcı yorumu'
+        "📸 Instagram Gönderileri (Post)": f'site:instagram.com/p/ "{temiz_urun}"',
+        "🎬 Instagram Videoları (Reels)": f'site:instagram.com/reel/ "{temiz_urun}"',
+        "🛒 Trendyol & Hepsiburada": f'site:trendyol.com OR site:hepsiburada.com "{temiz_urun}"',
+        "📦 Diğer E-Ticaret Satış Noktaları": f'"{temiz_urun}" sipariş satın al',
+        "🌐 Resmi Web Sitesi": f'site:{marka_domain} "{temiz_urun}"' if marka_domain else f'"{temiz_urun}" orjinal satış'
     }
+    
     kategorize_sonuclar = {}
     with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
@@ -773,7 +775,7 @@ if not is_radar:
                             st.session_state.analiz_gorselleri.append(wg)
                     
                     sistem_metodolojisi = f"""
-SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, SAĞLIK BAKANLIĞI TİTCK MEVZUATI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
+SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, SAĞLIK BAKANLIĞI TİTCK MEVZUATI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİN.
 Derinlemesine düşünme (Chain of Thought) yeteneğini kullanarak, yüklenen görselleri, metinleri, başlıkları ve ambalaj rozetlerini adım adım analiz et.
 
 KESİN KURAL (SIFIR HALÜSİNASYON VE TIBBİ CİHAZ / KOZMETİK AYRIMI):
