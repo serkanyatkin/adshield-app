@@ -29,15 +29,15 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- LOCAL WEBHOOK (EKLENTİ ALICISI - PORT 8001) -----------------
+# ----------------- LOCAL WEBHOOK (EKLENTİ ALICISI - PORT 8085) -----------------
 class AdShieldWebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
-        pass # Konsolu kirletmemek için sessize alıyoruz
+        pass
 
     def do_OPTIONS(self):
         self.send_response(200, "ok")
         self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'POST, OPTIONS')
+        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
         self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-type")
         self.end_headers()
 
@@ -54,17 +54,19 @@ class AdShieldWebhookHandler(BaseHTTPRequestHandler):
             self.send_header('Access-Control-Allow-Origin', '*')
             self.end_headers()
             self.wfile.write(b"OK")
-        except Exception:
+        except Exception as e:
+            print(f"Post Hatası: {e}")
             self.send_response(500)
             self.end_headers()
 
 def run_webhook_server():
     try:
-        # Port 8001 ve sadece yerel ağa (127.0.0.1) kilitlendi
-        httpd = HTTPServer(('127.0.0.1', 8001), AdShieldWebhookHandler)
+        # '' bırakarak IP çakışmasını önlüyoruz ve Port'u 8085 yapıyoruz
+        httpd = HTTPServer(('', 8085), AdShieldWebhookHandler)
+        print("AdShield Dinleyicisi 8085 portunda başarıyla başlatıldı!")
         httpd.serve_forever()
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"ALICI SUNUCU BAŞLATILAMADI (Port 8085 dolu olabilir): {e}")
 
 if "webhook_thread" not in st.session_state:
     t = threading.Thread(target=run_webhook_server, daemon=True)
@@ -86,8 +88,8 @@ if os.path.exists('adshield_queue.json'):
         st.session_state.eklenti_img = Image.open(io.BytesIO(img_data))
         
         os.remove('adshield_queue.json')
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"Dosya okuma hatası: {e}")
 # -------------------------------------------------------------------
 
 # Sayfa İçi Akıllı Kaydırma Fonksiyonu
@@ -148,18 +150,15 @@ st.markdown("""
 try:
     api_key = st.secrets.get("GEMINI_API_KEY", None)
     serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
-    apify_key = st.secrets.get("APIFY_API_KEY", None)
 except Exception:
     api_key = None
     serpapi_key = None
-    apify_key = None
 
 with st.sidebar:
     st.header("Sistem Ayarları")
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
-    apify_key = st.text_input("Apify API Key:", value=apify_key or "", type="password")
-    st.caption("ℹ️ Eklenti entegrasyonu başarıyla kuruldu (Port 8001).")
+    st.caption("ℹ️ Eklenti entegrasyonu başarıyla kuruldu (Port 8085). Apify API gerekmediği için kaldırılmıştır.")
 
 def optimize_image(img, max_dimension=2500):
     img = img.convert("RGB")
@@ -301,6 +300,14 @@ def create_docx(dilekce_text):
     docx_io = io.BytesIO(); doc.save(docx_io); docx_io.seek(0)
     return docx_io.getvalue()
 
+def generate_content_safe_text(contents):
+    if not api_key:
+        return "API anahtarı eksik."
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel(model_name=TARGET_MODEL)
+    res = model.generate_content(contents)
+    return res.text if res else "Hata."
+
 # Session States
 for k in ["rapor_sonucu", "dilekce_sonucu", "chat_history", "analiz_gorselleri", "radar_link_sonuclari"]:
     if k not in st.session_state: st.session_state[k] = None
@@ -390,12 +397,13 @@ if not is_radar:
                 if not is_danisan:
                     if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla (Word)", type="primary"):
                         with st.spinner("Dilekçe yazılıyor..."):
-                            st.session_state.dilekce_sonucu = generate_content_safe([st.session_state.rapor_sonucu + "\nBuna göre şikayet dilekçesi yaz."])
+                            st.session_state.dilekce_sonucu = generate_content_safe_text([st.session_state.rapor_sonucu + "\nBuna göre şikayet dilekçesi yaz."])
                             st.rerun()
                 if st.session_state.dilekce_sonucu:
                     st.markdown(st.session_state.dilekce_sonucu)
             else:
                 st.info("Rapor bu alanda oluşturulacaktır.")
+
 else:
     with sol_kolon:
         with st.container(border=True):
