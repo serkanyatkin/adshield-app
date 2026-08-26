@@ -196,8 +196,12 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-api_key = st.secrets.get("GEMINI_API_KEY", None)
-serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
+try:
+    api_key = st.secrets.get("GEMINI_API_KEY", None)
+    serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
+except Exception:
+    api_key = None
+    serpapi_key = None
 
 if not api_key:
     with st.sidebar:
@@ -219,7 +223,6 @@ def get_working_model(system_instruction=None):
     genai.configure(api_key=api_key)
     return genai.GenerativeModel(model_name=TARGET_MODEL, system_instruction=system_instruction)
 
-# --- İNTERAKTİF ASİSTAN İÇİN ÇOK DAHA TEMİZ KOTA HATA MESAJI ---
 def generate_content_safe(contents, system_instruction=None):
     model = get_working_model(system_instruction=system_instruction)
     for attempt in range(2):
@@ -236,7 +239,6 @@ def generate_content_safe(contents, system_instruction=None):
                     continue
             raise Exception("🚨 **API KOTASI DOLDU:** Google ücretsiz hesap limitlerine ulaştınız. Lütfen sisteme yeni bir API Key girin veya kotalarınızın sıfırlanması için bekleyin.")
 
-# --- KENDİNİ OTOMATİK İYİLEŞTİREN SENTEZ MOTORU ---
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
         raise Exception("API anahtarı bulunamadı.")
@@ -283,7 +285,6 @@ KESİN KURALLAR:
                     time.sleep(wait_time)
                     continue 
                 else:
-                    # Artık 2 denemeden sonra hala 429 alıyorsa açıkça limiti dolduğu uyarısını veriyoruz
                     yield "\n\n🚨 **API KOTASI TÜKENDİ (429 Hatası):**\nGoogle Free Tier (Ücretsiz Katman) günlük ve dakikalık limitlerinizi tamamen doldurdunuz. Sorun koddan değil, Google'ın hesabınıza uyguladığı engelden kaynaklanmaktadır.\n\n**Çözüm:**\n1. Sol menüdeki ayarlardan farklı bir hesaba ait yepyeni bir Gemini API Key girin.\n2. Veya kotaların sıfırlanması için lütfen daha sonra tekrar deneyin."
                     return
             
@@ -343,9 +344,7 @@ def fetch_url_data(url):
     return clean_text, downloaded_images
 
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
-    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=40"
-    YASAKLI_DIZINLER = ["/giris", "/odn/", "/hesabim", "/sepetim", "/sr?", "/ara?", "/search?", "/butik/", "/kampanyalar/"]
-    YASAKLI_GIYIM = ["elbise", "pantolon", "etek", "tulum", "ayakkabi", "ayakkabı", "bluz", "pijama", "sütyen", "külot", "triko", "kazak"]
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
     try:
         response = requests.get(url, timeout=7)
         data = response.json()
@@ -353,20 +352,6 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
         raw_items = []
         if "organic_results" in data:
             raw_items.extend(data["organic_results"])
-        if "shopping_results" in data:
-            for s in data["shopping_results"]:
-                raw_items.append({
-                    "link": s.get("link") or s.get("product_link", ""),
-                    "title": s.get("title", "Alışveriş Ürün Kartı"),
-                    "snippet": f"Fiyat: {s.get('price', '')} - Kaynak: {s.get('source', '')}"
-                })
-        if "inline_shopping_results" in data:
-            for s in data["inline_shopping_results"]:
-                raw_items.append({
-                    "link": s.get("link", ""),
-                    "title": s.get("title", "Ürün Vitrini"),
-                    "snippet": s.get("price", "")
-                })
         for result in raw_items:
             link = result.get("link", "")
             title = result.get("title", "Başlık Belirtilmemiş")
@@ -374,12 +359,8 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
             if not link or not link.startswith("http"):
                 continue
             url_lower = link.lower()
-            title_lower = title.lower()
-            if any(yd in url_lower for yd in YASAKLI_DIZINLER):
+            if any(y in url_lower for y in ["/giris", "/hesabim", "/sepetim", "auth", "login"]):
                 continue
-            if "instagram.com" not in url_lower:
-                if any(yg in url_lower or yg in title_lower for yg in YASAKLI_GIYIM):
-                    continue
             link_havuzu.append({"baslik": title, "url": link, "snippet": snippet})
         return kategori, link_havuzu
     except Exception:
@@ -388,25 +369,16 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val or not urun_adi.strip():
         return {}
-    tam_sorgu = urun_adi.strip()
-    kelimeler = tam_sorgu.split()
-    ana_marka = kelimeler[0]
-    temiz_domain = ""
-    if marka_domain and marka_domain.strip():
-        temiz_domain = re.sub(r'^https?://', '', marka_domain.strip()).split('/')[0].replace('www.', '').strip()
-    
+    temiz_urun = urun_adi.strip()
     queries = {
-        "🛒 Trendyol Tekil Ürün Sayfaları": f'site:trendyol.com {ana_marka}',
-        "🛍️ Hepsiburada Tekil Ürün Sayfaları": f'site:hepsiburada.com {ana_marka}',
-        "📦 Amazon Türkiye Tekil Ürünler": f'site:amazon.com.tr {ana_marka}',
-        "🌐 Marka Resmi Web Sitesi & Mağazası": f'site:{temiz_domain}' if temiz_domain else f'{ana_marka} (site:.com OR site:.com.tr)',
-        "📱 Instagram Reels & Video Akışı": f'site:instagram.com {ana_marka}',
-        "🏷️ Instagram İş Birliği & Reklam Radarı": f'site:instagram.com {ana_marka} (işbirliği OR reklam OR sponsor OR hediye OR "#işbirliği" OR "#reklam")',
-        "✨ Instagram Sağlık Beyanı, Öncesi/Sonrası & İddialar": f'site:instagram.com {ana_marka} ("öncesi sonrası" OR "before after" OR mucize OR tedavi OR leke OR çatlak)',
-        "💬 Instagram Kullanıcı Deneyimi, Tavsiye & İnceleme": f'site:instagram.com {ana_marka} (kullananlar OR deneyim OR tavsiye OR yorum OR inceleme)'
+        "🛒 Trendyol Satış Noktaları": f'{temiz_urun} trendyol satıcı fiyat',
+        "🛍️ Hepsiburada Ürün Sayfaları": f'{temiz_urun} hepsiburada',
+        "📦 E-Ticaret ve Pazar Yerleri": f'{temiz_urun} satın al sipariş',
+        "🌐 Resmi Web Sitesi & Bayiler": f'{temiz_urun} resmi site orjinal',
+        "💬 Tüketici Yorumları & Şikayetler": f'{temiz_urun} şikayet var kullanıcı yorumu'
     }
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=8) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
@@ -668,9 +640,6 @@ is_radar = "360° Çoklu Satıcı" in mod_secimi
 
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
-# ==========================================
-# MOD 1 & MOD 2: MEVCUT DENETİM VE RAKİP MODLARI
-# ==========================================
 if not is_radar:
     with sol_kolon:
         with st.container(border=True):
@@ -741,15 +710,19 @@ if not is_radar:
                     ilgili_emsaller, emsal_liste = get_relevant_emsaller(birlestirilmis_metin, sektor)
                     st.session_state.kullanilan_emsaller = emsal_liste
                     
+                    # --- DERİNLEMESİNE DÜŞÜNME (CHAIN OF THOUGHT) VE SIFIR HALÜSİNASYON TALİMATI ---
                     sistem_metodolojisi = f"""
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
-Yüklenen metinleri, başlıkları, ambalaj rozetlerini ve iddiaları doğrudan mevzuata uygunluk açısından denetle.
+Derinlemesine düşünme (Chain of Thought) yeteneğini kullanarak, yüklenen görselleri, metinleri, başlıkları ve ambalaj rozetlerini adım adım analiz et.
+
+KESİN KURAL (SIFIR HALÜSİNASYON):
+1. Görsellerdeki ürün isimlerini, sürüm/versiyon numaralarını (örn. 3.0), hacim ve gramaj bilgilerini (örn. 20mg/2mL) bir OCR cihazı hassasiyetiyle oku. 
+2. Asla görselde olmayan bir sayıyı, versiyonu veya gramajı uydurma.
+3. Görselin kompozisyonunu (örn. modelin kıyafeti, arka plan) hukuki bir delil gibi incele ve bunun tüketici algısına etkisini değerlendir.
 
 === EMSAL REKLAM KURULU İÇTİHATLARI ===
 {ilgili_emsaller}
 =======================================
-
-ÖNEMLİ: Emsal kararlarda sürekli olarak "L'Oreal / La Roche-Posay" örneğini verme. Sunduğum metindeki emsal havuzunu kullan veya farklı, çeşitli TİTCK/Reklam Kurulu kararları sun.
 
 İNCELENEN VERİLER:
 Sektör: {sektor} | Mecra: {mecra}
@@ -761,20 +734,18 @@ RAPOR FORMATI:
 ### [RİSK DERECESİ: YÜKSEK / ORTA / DÜŞÜK] - Risk Skoru: [0-100]
 
 ### I. MEVZUAT UYUM ANALİZİ VE TESPİT EDİLEN RİSKLİ İDDİALAR
-* **[Tespit Edilen İfade/Rozet 1]:** (Mevzuat ihlali ve tüketici algısı)
-* **[Tespit Edilen İfade/Rozet 2]:**
+* **[Tespit Edilen İfade/Rozet/Görsel Öğe 1]:** (Mevzuat ihlali ve tüketici algısı)
+* **[Tespit Edilen İfade/Rozet/Görsel Öğe 2]:**
 
 ### II. REKLAM KURULU EMSAL KARARLARI VE CEZA EŞLEŞMELERİ
 * **Emsal Karar 1:** (Dosya No, Karar Tarihi, Ceza Alan İfade, Uygulanan Yaptırım)
-* **Emsal Karar 2:**
 
 ### III. ÖNGÖRÜLEN İDARİ PARA CEZASI VE RİSK SKALASI
 * **Yayın Mecrası:** {mecra}
-* **Ceza & Yaptırım Riski:** (6502 m. 77 uyarınca idari para cezası ve durdurma riski)
+* **Ceza & Yaptırım Riski:** 
 
 ### IV. GÜVENLİ VE TİCARİ ETKİSİ YÜKSEK REVİZE METİN
 * **Önerilen Güvenli İfade & Rozet Alternatifleri:**
-* **Gereken İspat & Dipnot Standartları:**
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, nihai hukuki mütalaa yerine geçmez."
@@ -785,12 +756,11 @@ RAPOR FORMATI:
 ### [İHLAL DERECESİ: AĞIR / ORTA / HAFİF] - İhlal Skoru: [0-100]
 
 ### I. HAKSIZ REKABET VE MEVZUATA AYKIRILIK TESPİTİ
-* **[Hukuka Aykırı İfade 1]:** (6502 ve TTK uyarınca haksız ticari uygulama gerekçesi)
-* **[Hukuka Aykırı İfade 2]:**
+* **[Hukuka Aykırı İfade/Görsel Algı 1]:** (6502 ve TTK uyarınca haksız ticari uygulama gerekçesi)
+* **[Hukuka Aykırı İfade/Görsel Algı 2]:**
 
 ### II. REKLAM KURULU EMSAL İÇTİHATLARI
 * **Emsal Karar 1:** (Dosya No, İhlal Edilen Kural, Ceza Tutarı)
-* **Emsal Karar 2:**
 
 ### III. RAKİBE UYGULANABİLECEK İDARİ YAPTIRIMLAR
 * **6502 m. 77 Para Cezası ve İdari Tedbirler**
@@ -812,7 +782,7 @@ RAPOR FORMATI:
                     rapor_alani = st.empty()
                     try:
                         tam_rapor = ""
-                        with st.spinner("Tekil Sentez Motoru çalışıyor... (Kotanız korunuyor)"):
+                        with st.spinner("Gelişmiş Yapay Zeka Sentez Motoru (OCR & Analiz) çalışıyor..."):
                             for parca in generate_multi_role_synthesis_stream(icerik_listesi, base_prompt, is_danisan):
                                 tam_rapor += parca
                                 rapor_alani.markdown(tam_rapor + "▌")
@@ -905,9 +875,10 @@ RAPOR FORMATI:
                                         s_edilen_adr = sikayet_edilen_adres.strip() if sikayet_edilen_adres.strip() else "[Şikayet Edilen Adres]"
                                         s_link = reklam_url.strip() if reklam_url.strip() else "[İncelenen URL]"
 
+                                        # --- DİLEKÇE YAZIMINDA GÖRSEL YENİDEN BESLEME VE DERİN DÜŞÜNME TALİMATI ---
                                         dilekce_prompt = f"""
-Sen tüketici hukuku, haksız rekabet ve Reklam Kurulu regülasyonlarında tecrübeli bir Hukuk Müşavirisin.
-Aşağıda incelenen rakip tanıtımına ilişkin teknik ihlal raporu ve girilen taraf bilgileri yer almaktadır:
+Sen tüketici hukuku, haksız rekabet ve Reklam Kurulu regülasyonlarında tecrübeli, derinlemesine düşünen (chain-of-thought) bir Hukuk Müşavirisin.
+Aşağıda incelenen rakip tanıtımına ilişkin teknik ihlal raporu ve girilen taraf bilgileri yer almaktadır. Ayrıca bu sürece ait GÖRSELLER de sana tekrar sunulmuştur.
 
 TEKNİK İHLAL RAPORU:
 {st.session_state.rapor_sonucu}
@@ -921,11 +892,12 @@ ADRES: {s_edilen_adr}
 İNCELEME LİNKİ: {s_link}
 
 GÖREVİN: Resmi bir REKLAM KURULU ŞİKAYET DİLEKÇESİ hazırlamaktır.
-KURALLAR:
-1. Markdown karakterleri (*, #, ---) kullanma, düz metin ver.
-2. Emsal kararlara dilekçe gövdesinde yer verme.
-3. "müstakilen" kelimesini asla kullanma.
-4. Açıklama altındaki 1, 2, 3, 4, 5 maddeleri tam cümle başlıklar olsun.
+KESİN KURALLAR VE SIFIR HALÜSİNASYON DİREKTİFİ:
+1. Dilekçeyi yazarken ürün adı, model sürümü (örn. 3.0), hacim ve gramaj (örn. 20mg/2mL) gibi bilgileri asla kendin uydurma. Bu bilgileri doğrudan sana sunduğum EKTEKİ GÖRSELLERİN ÜZERİNİ OKUYARAK tespit et.
+2. Markdown karakterleri (*, #, ---) kullanma, düz metin ver.
+3. Emsal kararlara dilekçe gövdesinde yer verme.
+4. "müstakilen" kelimesini asla kullanma.
+5. Açıklama altındaki 1, 2, 3, 4, 5 maddeleri tam cümle başlıklar olsun ve her biri güçlü bir avukatın kaleme alacağı şekilde haksız ticari uygulama ve yanıltıcı niteliği somutlaştırsın (özellikle görseldeki spor/açık hava temasının yarattığı algı gibi derin hukuki yorumları mutlaka kullan).
 
 DİLEKÇE YAPISI:
 T.C. TİCARET BAKANLIĞI
@@ -944,10 +916,19 @@ AÇIKLAMALAR:
 (Giriş paragrafı)
 
 1. [Tam Cümle Başlık]:
+(Açıklama)
+
 2. [Tam Cümle Başlık]:
+(Açıklama)
+
 3. [Tam Cümle Başlık]:
+(Açıklama)
+
 4. [Tam Cümle Başlık]:
+(Açıklama)
+
 5. [Tam Cümle Başlık]:
+(Açıklama)
 
 SONUÇ VE İSTEM:
 Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari para cezası uygulanmasını talep ederiz.
@@ -955,7 +936,16 @@ Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari 
 ŞİKAYET EDEN MÜVEKKİL VEKİLİ
 {s_vekil}
 """
-                                        st.session_state.dilekce_sonucu = generate_content_safe(dilekce_prompt)
+                                        # Görselleri dilekçe aşamasında yapay zekaya tekrar besliyoruz (halüsinasyonu bitiren adım)
+                                        dilekce_icerik = [dilekce_prompt]
+                                        if yuklenen_gorseller:
+                                            for g in yuklenen_gorseller:
+                                                dilekce_icerik.append(optimize_image(Image.open(g)))
+                                        if web_gorselleri:
+                                            for wg in web_gorselleri:
+                                                dilekce_icerik.append(wg)
+
+                                        st.session_state.dilekce_sonucu = generate_content_safe(dilekce_icerik)
                                         st.rerun()
                                     except Exception as e:
                                         st.error(f"Dilekçe hazırlanırken bir hata oluştu: {e}")
@@ -983,9 +973,6 @@ Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari 
             else:
                 st.info("Sol panelden parametreleri belirleyip analizi başlattığınızda rapor bu alanda hazır hale gelecektir.")
 
-# ==========================================
-# MOD 3: 360° ÇOKLU SATICI VE PAZAR RADARI
-# ==========================================
 else:
     with sol_kolon:
         with st.container(border=True):
@@ -1027,9 +1014,6 @@ else:
             else:
                 st.info("Sol panelden taramayı başlattığınızda tespit edilen bağlantılar burada listelenecektir.")
 
-# ==========================================
-# İNTERAKTİF CHATBOT (MEVZUAT ASİSTANI)
-# ==========================================
 if st.session_state.rapor_sonucu and not is_radar:
     st.write("")
     with st.container(border=True):
