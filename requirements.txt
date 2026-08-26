@@ -6,3 +6,4 @@ pillow
 fpdf2
 python-docx
 beautifulsoup4
+apify-client
