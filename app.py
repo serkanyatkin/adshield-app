@@ -410,7 +410,6 @@ def load_and_index_kararlar():
 
 karar_arsivi = load_and_index_kararlar()
 
-# --- L'OREAL'İ ENGELLEYEN VE PUANLAYAN EMSAL MOTORU ---
 def get_relevant_emsaller(metin, sektor, top_k=3):
     if not karar_arsivi:
         return "Karar arşivi yüklenemedi.", []
@@ -620,6 +619,9 @@ if "rakip_gorunum" not in st.session_state:
     st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
 if "radar_link_sonuclari" not in st.session_state:
     st.session_state.radar_link_sonuclari = None
+# KRİTİK EKLENTİ: Görselleri hafızada tutmak için alan açıyoruz.
+if "analiz_gorselleri" not in st.session_state:
+    st.session_state.analiz_gorselleri = []
 
 # Mod Seçimi
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
@@ -701,6 +703,9 @@ if not is_radar:
                 else:
                     url_metni = ""
                     web_gorselleri = []
+                    # KRİTİK DÜZELTME: Eski analiz görsellerini temizleyip yenilerini hafızaya alıyoruz.
+                    st.session_state.analiz_gorselleri = []
+                    
                     if reklam_url:
                         with st.spinner("Link içeriği taranıyor..."):
                             url_metni, web_gorselleri = fetch_url_data(reklam_url)
@@ -710,7 +715,14 @@ if not is_radar:
                     ilgili_emsaller, emsal_liste = get_relevant_emsaller(birlestirilmis_metin, sektor)
                     st.session_state.kullanilan_emsaller = emsal_liste
                     
-                    # --- DERİNLEMESİNE DÜŞÜNME (CHAIN OF THOUGHT) VE SIFIR HALÜSİNASYON TALİMATI ---
+                    # Görselleri kalıcı olarak oturum belleğine (Session State) kopyalıyoruz
+                    if yuklenen_gorseller:
+                        for g in yuklenen_gorseller:
+                            st.session_state.analiz_gorselleri.append(optimize_image(Image.open(g)))
+                    if web_gorselleri:
+                        for wg in web_gorselleri:
+                            st.session_state.analiz_gorselleri.append(wg)
+                    
                     sistem_metodolojisi = f"""
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
 Derinlemesine düşünme (Chain of Thought) yeteneğini kullanarak, yüklenen görselleri, metinleri, başlıkları ve ambalaj rozetlerini adım adım analiz et.
@@ -772,12 +784,9 @@ RAPOR FORMATI:
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, nihai hukuki mütalaa yerine geçmez."
 """
                     icerik_listesi = [f"Metin/Parametreler: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
-                    if yuklenen_gorseller:
-                        for g in yuklenen_gorseller:
-                            icerik_listesi.append(optimize_image(Image.open(g)))
-                    if web_gorselleri:
-                        for wg in web_gorselleri:
-                            icerik_listesi.append(wg)
+                    # Görselleri artık sadece geçici değişkenden değil, hafızadan (session state) aktarıyoruz.
+                    if st.session_state.analiz_gorselleri:
+                        icerik_listesi.extend(st.session_state.analiz_gorselleri)
 
                     rapor_alani = st.empty()
                     try:
@@ -875,7 +884,6 @@ RAPOR FORMATI:
                                         s_edilen_adr = sikayet_edilen_adres.strip() if sikayet_edilen_adres.strip() else "[Şikayet Edilen Adres]"
                                         s_link = reklam_url.strip() if reklam_url.strip() else "[İncelenen URL]"
 
-                                        # --- DİLEKÇE YAZIMINDA GÖRSEL YENİDEN BESLEME VE DERİN DÜŞÜNME TALİMATI ---
                                         dilekce_prompt = f"""
 Sen tüketici hukuku, haksız rekabet ve Reklam Kurulu regülasyonlarında tecrübeli, derinlemesine düşünen (chain-of-thought) bir Hukuk Müşavirisin.
 Aşağıda incelenen rakip tanıtımına ilişkin teknik ihlal raporu ve girilen taraf bilgileri yer almaktadır. Ayrıca bu sürece ait GÖRSELLER de sana tekrar sunulmuştur.
@@ -936,14 +944,10 @@ Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari 
 ŞİKAYET EDEN MÜVEKKİL VEKİLİ
 {s_vekil}
 """
-                                        # Görselleri dilekçe aşamasında yapay zekaya tekrar besliyoruz (halüsinasyonu bitiren adım)
+                                        # KRİTİK DÜZELTME: Hatanın kaynağı burasıydı. Artık görseller hafızadan güvenle çekiliyor.
                                         dilekce_icerik = [dilekce_prompt]
-                                        if yuklenen_gorseller:
-                                            for g in yuklenen_gorseller:
-                                                dilekce_icerik.append(optimize_image(Image.open(g)))
-                                        if web_gorselleri:
-                                            for wg in web_gorselleri:
-                                                dilekce_icerik.append(wg)
+                                        if st.session_state.analiz_gorselleri:
+                                            dilekce_icerik.extend(st.session_state.analiz_gorselleri)
 
                                         st.session_state.dilekce_sonucu = generate_content_safe(dilekce_icerik)
                                         st.rerun()
