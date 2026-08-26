@@ -29,7 +29,7 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- LOCAL WEBHOOK (EKLENTİ ALICISI) -----------------
+# ----------------- LOCAL WEBHOOK (EKLENTİ ALICISI - PORT 8001) -----------------
 class AdShieldWebhookHandler(BaseHTTPRequestHandler):
     def log_message(self, format, *args):
         pass # Konsolu kirletmemek için sessize alıyoruz
@@ -60,7 +60,8 @@ class AdShieldWebhookHandler(BaseHTTPRequestHandler):
 
 def run_webhook_server():
     try:
-        httpd = HTTPServer(('', 8000), AdShieldWebhookHandler)
+        # Port 8001 ve sadece yerel ağa (127.0.0.1) kilitlendi
+        httpd = HTTPServer(('127.0.0.1', 8001), AdShieldWebhookHandler)
         httpd.serve_forever()
     except Exception:
         pass
@@ -158,7 +159,7 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
     apify_key = st.text_input("Apify API Key:", value=apify_key or "", type="password")
-    st.caption("ℹ️ Eklenti entegrasyonu başarıyla kuruldu (Port 8000).")
+    st.caption("ℹ️ Eklenti entegrasyonu başarıyla kuruldu (Port 8001).")
 
 def optimize_image(img, max_dimension=2500):
     img = img.convert("RGB")
@@ -395,7 +396,6 @@ if not is_radar:
                     st.markdown(st.session_state.dilekce_sonucu)
             else:
                 st.info("Rapor bu alanda oluşturulacaktır.")
-
 else:
     with sol_kolon:
         with st.container(border=True):
