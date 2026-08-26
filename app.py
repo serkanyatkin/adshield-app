@@ -393,7 +393,8 @@ def fetch_url_data(url, apify_token=""):
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
     try:
-        response = requests.get(url, timeout=7)
+        # SÜRE AŞIMI (TIMEOUT) 7 SANİYEDEN 20 SANİYEYE ÇIKARILDI
+        response = requests.get(url, timeout=20)
         data = response.json()
         
         if "error" in data:
