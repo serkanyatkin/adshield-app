@@ -419,13 +419,13 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
         return {}
     temiz_urun = urun_adi.strip()
     
-    # YENİ NESİL SORGULAR: Şikayet siteleri yerine Instagram ve doğrudan ürün satış hedefleri
+    # Katı tırnak işaretleri kaldırılarak esnek arama sağlandı
     queries = {
-        "📸 Instagram Gönderileri (Post)": f'site:instagram.com/p/ "{temiz_urun}"',
-        "🎬 Instagram Videoları (Reels)": f'site:instagram.com/reel/ "{temiz_urun}"',
-        "🛒 Trendyol & Hepsiburada": f'site:trendyol.com OR site:hepsiburada.com "{temiz_urun}"',
-        "📦 Diğer E-Ticaret Satış Noktaları": f'"{temiz_urun}" sipariş satın al',
-        "🌐 Resmi Web Sitesi": f'site:{marka_domain} "{temiz_urun}"' if marka_domain else f'"{temiz_urun}" orjinal satış'
+        "📸 Instagram Gönderileri (Post)": f'site:instagram.com/p/ {temiz_urun}',
+        "🎬 Instagram Videoları (Reels)": f'site:instagram.com/reel/ {temiz_urun}',
+        "🛒 Trendyol & Hepsiburada": f'site:trendyol.com OR site:hepsiburada.com {temiz_urun}',
+        "📦 Diğer E-Ticaret Satış Noktaları": f'{temiz_urun} sipariş satın al',
+        "🌐 Resmi Web Sitesi": f'site:{marka_domain} {temiz_urun}' if marka_domain else f'{temiz_urun} orjinal satış'
     }
     
     kategorize_sonuclar = {}
