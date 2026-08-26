@@ -396,7 +396,6 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
         response = requests.get(url, timeout=7)
         data = response.json()
         
-        # HATA YAKALAMA (SESSİZCE YUTMA YERİNE EKRANA BASMA)
         if "error" in data:
             return kategori, [{"baslik": "⚠️ API HATASI", "url": "#", "snippet": f"SerpApi Hata Mesajı: {data['error']}. Lütfen API kotanızı veya anahtarınızı kontrol edin."}]
 
@@ -404,19 +403,28 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
         raw_items = []
         if "organic_results" in data:
             raw_items.extend(data["organic_results"])
+            
         for result in raw_items:
             link = result.get("link", "")
             title = result.get("title", "Başlık Belirtilmemiş")
             snippet = result.get("snippet", "")
             if not link or not link.startswith("http"):
                 continue
+                
             url_lower = link.lower()
-            if any(y in url_lower for y in ["/giris", "/hesabim", "/sepetim", "auth", "login"]):
+            
+            # KESİN FİLTRE: Arama ve kategori sayfalarını temizle, sadece tekil ürünleri bırak
+            yasakli_kelimeler = [
+                "/giris", "/hesabim", "/sepetim", "auth", "login", 
+                "/sr?q=", "/sr", "/ara?q", "kategori", "/magaza/", 
+                "tum-urunler", "/search", "/arama"
+            ]
+            if any(y in url_lower for y in yasakli_kelimeler):
                 continue
+                
             link_havuzu.append({"baslik": title, "url": link, "snippet": snippet})
         return kategori, link_havuzu
     except Exception as e:
-        # Sunucu çökmesi veya bağlantı hatasını da bas
         return kategori, [{"baslik": "⚠️ BAĞLANTI HATASI", "url": "#", "snippet": f"Sorgu yapılamadı. Hata: {str(e)}"}]
 
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
@@ -424,16 +432,17 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
         return {}
     temiz_urun = urun_adi.strip()
     
-    # EN SADE, EN GARANTİ ARAMA (Google Dork kısıtlamaları esnetildi)
+    # KATALOG/ARAMA SAYFASI FİLTRELERİ (-inurl) EKLENDİ
     queries = {
-        "📸 Instagram": f'site:instagram.com {temiz_urun}',
-        "🛒 Trendyol & Hepsiburada": f'site:trendyol.com OR site:hepsiburada.com {temiz_urun}',
-        "📦 Diğer E-Ticaret": f'{temiz_urun} sipariş OR satın al',
-        "🌐 Resmi Web Sitesi": f'site:{marka_domain} {temiz_urun}' if marka_domain else f'{temiz_urun} resmi site'
+        "📸 Instagram Gönderileri (Post)": f'site:instagram.com/p/ {temiz_urun}',
+        "🎬 Instagram Videoları (Reels)": f'site:instagram.com/reel/ {temiz_urun}',
+        "🛒 Trendyol & Hepsiburada (Tekil Ürünler)": f'(site:trendyol.com OR site:hepsiburada.com) {temiz_urun} -inurl:sr -inurl:ara -inurl:kategori -inurl:magaza',
+        "📦 Diğer E-Ticaret": f'{temiz_urun} sipariş OR satın al -inurl:arama -inurl:search -inurl:kategori',
+        "🌐 Resmi Web Sitesi": f'site:{marka_domain} {temiz_urun} -inurl:arama -inurl:search' if marka_domain else f'{temiz_urun} resmi site'
     }
     
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=4) as executor:
+    with ThreadPoolExecutor(max_workers=5) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
