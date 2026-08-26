@@ -17,6 +17,7 @@ from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
 import textwrap
 import time
+from apify_client import ApifyClient
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -199,17 +200,21 @@ st.markdown("""
 try:
     api_key = st.secrets.get("GEMINI_API_KEY", None)
     serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
+    apify_key = st.secrets.get("APIFY_API_KEY", None)
 except Exception:
     api_key = None
     serpapi_key = None
+    apify_key = None
 
-if not api_key:
-    with st.sidebar:
-        st.header("Sistem Ayarları")
-        api_key = st.text_input("Gemini API Key:", type="password")
-        serpapi_key = st.text_input("SerpApi Key:", type="password")
+# Sol Menü (Güvenli API Giriş Alanı)
+with st.sidebar:
+    st.header("Sistem Ayarları")
+    api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
+    serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
+    apify_key = st.text_input("Apify API Key:", value=apify_key or "", type="password")
+    st.caption("ℹ️ Apify anahtarınızı buraya güvenle yapıştırabilirsiniz.")
 
-def optimize_image(img, max_dimension=800):
+def optimize_image(img, max_dimension=2500):
     img = img.convert("RGB")
     if max(img.size) > max_dimension:
         img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
@@ -227,7 +232,7 @@ def generate_content_safe(contents, system_instruction=None):
     model = get_working_model(system_instruction=system_instruction)
     for attempt in range(2):
         try:
-            response = model.generate_content(contents)
+            response = model.generate_content(contents, generation_config=genai.types.GenerationConfig(temperature=0.0))
             if response and response.text:
                 return response.text
             raise Exception("Model boş yanıt döndürdü.")
@@ -237,7 +242,7 @@ def generate_content_safe(contents, system_instruction=None):
                 if attempt < 1:
                     time.sleep(15)
                     continue
-            raise Exception("🚨 **API KOTASI DOLDU:** Google ücretsiz hesap limitlerine ulaştınız. Lütfen sisteme yeni bir API Key girin veya kotalarınızın sıfırlanması için bekleyin.")
+            raise Exception("🚨 **API KOTASI DOLDU:** Google ücretsiz hesap limitlerine ulaştınız. Lütfen sisteme yeni bir API Key girin veya kotaların sıfırlanması için bekleyin.")
 
 def generate_multi_role_synthesis_stream(contents, system_instruction_base, is_danisan):
     if not api_key:
@@ -255,6 +260,7 @@ KESİN KURALLAR:
 1. "KİME:", "HAZIRLAYAN:", "KONU:" gibi bürokratik giriş antetlerini ASLA KULLANMA. Doğrudan raporun ana özetine veya ihlal analizine başla.
 2. Emsal Kararlar bölümünde sürekli olarak "L'Oreal", "La Roche-Posay" gibi aynı markaları TEKRAR ETME. Çeşitliliği sağla ve gönderdiğim güncel emsalleri kullan.
 3. Raporu okuyan kişiyi yormayacak, şık ve ferah bir Markdown düzeni (kalın başlıklar, düzgün listeler) kullan.
+4. BİRİNCİ TARAF / MARKA KONTROLÜ: İncelediğin içerik ürünün üreticisine veya markanın kendi resmi sayfasına aitse (1. taraf), KESİNLİKLE Sosyal Medya Etkileyicileri Kılavuzu kurallarını uygulama ve marka kendi postunda #işbirliği / #reklam etiketi koymadı diye ihlal uydurma.
 """
     
     payload = [single_master_prompt] + contents
@@ -262,7 +268,7 @@ KESİN KURALLAR:
     
     for attempt in range(2):
         try:
-            response = model.generate_content(payload, stream=False)
+            response = model.generate_content(payload, stream=False, generation_config=genai.types.GenerationConfig(temperature=0.0))
             
             if response and response.text:
                 words = response.text.split(' ')
@@ -291,6 +297,35 @@ KESİN KURALLAR:
             yield f"\nSentezleme sırasında kalıcı bir hata oluştu: {err_str}"
             return
 
+def fetch_instagram_via_apify(url, apify_token):
+    """Apify Instagram Scraper kullanarak şüphesiz veri ve görsel çeker."""
+    if not apify_token or not url:
+        return "", []
+    try:
+        client = ApifyClient(apify_token)
+        run_input = {
+            "directUrls": [url.strip()],
+            "resultsType": "posts",
+            "searchLimit": 1,
+        }
+        run = client.actor("apify/instagram-scraper").call(run_input=run_input)
+        
+        caption = ""
+        downloaded_images = []
+        
+        for item in client.dataset(run["defaultDatasetId"]).iterate_items():
+            caption = item.get("caption", "")
+            display_url = item.get("displayUrl") or item.get("imageUrl")
+            if display_url:
+                res = requests.get(display_url, timeout=5)
+                if res.status_code == 200:
+                    img = Image.open(io.BytesIO(res.content))
+                    downloaded_images.append(optimize_image(img))
+            break
+        return caption, downloaded_images
+    except Exception as e:
+        return f"[Apify Instagram veri çekme hatası: {e}]", []
+
 def download_single_img(url, headers):
     try:
         res = requests.get(url, headers=headers, timeout=2.5)
@@ -301,12 +336,15 @@ def download_single_img(url, headers):
         pass
     return None
 
-def fetch_url_data(url):
+def fetch_url_data(url, apify_token=""):
     if not url or not url.strip().startswith(("http://", "https://")):
         return "", []
-    if any(sm in url.lower() for sm in ["instagram.com", "tiktok.com", "facebook.com", "twitter.com", "x.com"]):
-        return "[Sosyal medya linki girildi. Güvenlik duvarı nedeniyle görsel ve metin üzerinden incelenecektir.]", []
     
+    url_lower = url.lower()
+    if "instagram.com" in url_lower:
+        cap, imgs = fetch_instagram_via_apify(url, apify_token)
+        return f"[Apify ile Çekilen Instagram Metni]: {cap}", imgs
+
     clean_text = ""
     downloaded_images = []
     headers = {'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'}
@@ -619,7 +657,6 @@ if "rakip_gorunum" not in st.session_state:
     st.session_state.rakip_gorunum = "Haksız Rekabet ve İhlal Raporu"
 if "radar_link_sonuclari" not in st.session_state:
     st.session_state.radar_link_sonuclari = None
-# KRİTİK EKLENTİ: Görselleri hafızada tutmak için alan açıyoruz.
 if "analiz_gorselleri" not in st.session_state:
     st.session_state.analiz_gorselleri = []
 
@@ -664,9 +701,9 @@ if not is_radar:
                 "Açık Hava (Billboard, Broşür vb.)"
             ])
             
-            reklam_url = st.text_input("Web Sayfası / Ürün Linki", placeholder="https://www.site.com/urun veya kampanya adresi...")
-            if reklam_url and any(sm in reklam_url.lower() for sm in ["instagram.com", "tiktok.com"]):
-                st.info("Sosyal medya linkleri bot erişimine kapalıdır; görsel ve metin üzerinden inceleme yapılacaktır.")
+            reklam_url = st.text_input("Web Sayfası / Ürün Linki", placeholder="https://www.instagram.com/p/... veya site adresi")
+            if reklam_url and "instagram.com" in reklam_url.lower():
+                st.success("🔗 Instagram linki algılandı. Apify motoru ile görsel ve içerik otomatik çekilecektir.")
 
             reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=120, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
             
@@ -697,25 +734,26 @@ if not is_radar:
                 trigger_scroll("top")
 
                 if not api_key:
-                    st.error("Lütfen geçerli bir API anahtarı sağlayınız.")
+                    st.error("Lütfen sol menüden Gemini API anahtarınızı giriniz.")
+                elif not apify_key and reklam_url and "instagram.com" in reklam_url.lower():
+                    st.warning("Instagram linki taramak için lütfen sol menüden Apify API anahtarınızı giriniz.")
                 elif not reklam_metni and not yuklenen_gorseller and not reklam_url:
                     st.warning("Lütfen metin giriniz, link paylaşınız veya görsel yükleyiniz.")
                 else:
                     url_metni = ""
                     web_gorselleri = []
-                    # KRİTİK DÜZELTME: Eski analiz görsellerini temizleyip yenilerini hafızaya alıyoruz.
+                    
                     st.session_state.analiz_gorselleri = []
                     
                     if reklam_url:
-                        with st.spinner("Link içeriği taranıyor..."):
-                            url_metni, web_gorselleri = fetch_url_data(reklam_url)
+                        with st.spinner("Apify ve web kazıma motoru ile içerik ve görsel taranıyor..."):
+                            url_metni, web_gorselleri = fetch_url_data(reklam_url, apify_key)
                     
                     birlestirilmis_metin = f"{reklam_metni}\n\n[Kaynak Link]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
                     
                     ilgili_emsaller, emsal_liste = get_relevant_emsaller(birlestirilmis_metin, sektor)
                     st.session_state.kullanilan_emsaller = emsal_liste
                     
-                    # Görselleri kalıcı olarak oturum belleğine (Session State) kopyalıyoruz
                     if yuklenen_gorseller:
                         for g in yuklenen_gorseller:
                             st.session_state.analiz_gorselleri.append(optimize_image(Image.open(g)))
@@ -727,9 +765,9 @@ if not is_radar:
 SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
 Derinlemesine düşünme (Chain of Thought) yeteneğini kullanarak, yüklenen görselleri, metinleri, başlıkları ve ambalaj rozetlerini adım adım analiz et.
 
-KESİN KURAL (SIFIR HALÜSİNASYON):
-1. Görsellerdeki ürün isimlerini, sürüm/versiyon numaralarını (örn. 3.0), hacim ve gramaj bilgilerini (örn. 20mg/2mL) bir OCR cihazı hassasiyetiyle oku. 
-2. Asla görselde olmayan bir sayıyı, versiyonu veya gramajı uydurma.
+KESİN KURAL (SIFIR HALÜSİNASYON VE MARKA KONTROLÜ):
+1. Görsellerdeki ürün isimlerini, sürüm/versiyon numaralarını (örn. 3.0), hacim ve gramaj bilgilerini (örn. 90mg/3mL) bir OCR cihazı hassasiyetiyle oku. Asla uydurma.
+2. İncelediğin içerik ürünün üreticisine veya markanın kendi resmi sayfasına aitse (1. taraf), KESİNLİKLE Sosyal Medya Etkileyicileri Kılavuzu kurallarını uygulama ve marka kendi postunda #işbirliği / #reklam etiketi koymadı diye ihlal uydurma.
 3. Görselin kompozisyonunu (örn. modelin kıyafeti, arka plan) hukuki bir delil gibi incele ve bunun tüketici algısına etkisini değerlendir.
 
 === EMSAL REKLAM KURULU İÇTİHATLARI ===
@@ -784,14 +822,13 @@ RAPOR FORMATI:
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, nihai hukuki mütalaa yerine geçmez."
 """
                     icerik_listesi = [f"Metin/Parametreler: {birlestirilmis_metin}\nSektör: {sektor}\nMecra: {mecra}"]
-                    # Görselleri artık sadece geçici değişkenden değil, hafızadan (session state) aktarıyoruz.
                     if st.session_state.analiz_gorselleri:
                         icerik_listesi.extend(st.session_state.analiz_gorselleri)
 
                     rapor_alani = st.empty()
                     try:
                         tam_rapor = ""
-                        with st.spinner("Gelişmiş Yapay Zeka Sentez Motoru (OCR & Analiz) çalışıyor..."):
+                        with st.spinner("Apify Verileri ile Gelişmiş Yapay Zeka Sentez Motoru (OCR & Katı Mantık) çalışıyor..."):
                             for parca in generate_multi_role_synthesis_stream(icerik_listesi, base_prompt, is_danisan):
                                 tam_rapor += parca
                                 rapor_alani.markdown(tam_rapor + "▌")
@@ -901,11 +938,11 @@ ADRES: {s_edilen_adr}
 
 GÖREVİN: Resmi bir REKLAM KURULU ŞİKAYET DİLEKÇESİ hazırlamaktır.
 KESİN KURALLAR VE SIFIR HALÜSİNASYON DİREKTİFİ:
-1. Dilekçeyi yazarken ürün adı, model sürümü (örn. 3.0), hacim ve gramaj (örn. 20mg/2mL) gibi bilgileri asla kendin uydurma. Bu bilgileri doğrudan sana sunduğum EKTEKİ GÖRSELLERİN ÜZERİNİ OKUYARAK tespit et.
-2. Markdown karakterleri (*, #, ---) kullanma, düz metin ver.
-3. Emsal kararlara dilekçe gövdesinde yer verme.
+1. Dilekçeyi yazarken ürün adı, model sürümü, hacim ve gramaj gibi bilgileri asla kendin uydurma. Bu bilgileri doğrudan sana sunduğum EKTEKİ GÖRSELLERİN ÜZERİNİ OKUYARAK tespit et.
+2. Marka kendi resmi sayfasında paylaşım yapıyorsa asla örtülü reklam / etiket eksikliği iddiasına dilekçede yer verme.
+3. Markdown karakterleri (*, #, ---) kullanma, düz metin ver.
 4. "müstakilen" kelimesini asla kullanma.
-5. Açıklama altındaki 1, 2, 3, 4, 5 maddeleri tam cümle başlıklar olsun ve her biri güçlü bir avukatın kaleme alacağı şekilde haksız ticari uygulama ve yanıltıcı niteliği somutlaştırsın (özellikle görseldeki spor/açık hava temasının yarattığı algı gibi derin hukuki yorumları mutlaka kullan).
+5. Açıklama altındaki 1, 2, 3, 4, 5 maddeleri tam cümle başlıklar olsun.
 
 DİLEKÇE YAPISI:
 T.C. TİCARET BAKANLIĞI
@@ -944,7 +981,6 @@ Yukarıda arz edilen nedenlerle reklamların tedbiren durdurulmasını ve idari 
 ŞİKAYET EDEN MÜVEKKİL VEKİLİ
 {s_vekil}
 """
-                                        # KRİTİK DÜZELTME: Hatanın kaynağı burasıydı. Artık görseller hafızadan güvenle çekiliyor.
                                         dilekce_icerik = [dilekce_prompt]
                                         if st.session_state.analiz_gorselleri:
                                             dilekce_icerik.extend(st.session_state.analiz_gorselleri)
