@@ -298,7 +298,7 @@ KESİN KURALLAR:
             return
 
 def fetch_instagram_via_apify(url, apify_token):
-    """Apify Instagram Scraper kullanarak şüphesiz veri ve görsel çeker."""
+    """Apify Instagram Scraper kullanarak çoklu alan taramasıyla görsel ve metin çeker."""
     if not apify_token or not url:
         return "", []
     try:
@@ -314,11 +314,22 @@ def fetch_instagram_via_apify(url, apify_token):
         downloaded_images = []
         
         for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-            caption = item.get("caption", "")
-            display_url = item.get("displayUrl") or item.get("imageUrl")
+            caption = item.get("caption", "") or item.get("text", "")
+            
+            # Çoklu görsel alan taraması (Görselin kaçmasını önler)
+            display_url = (
+                item.get("displayUrl") or 
+                item.get("imageUrl") or 
+                item.get("thumbnailUrl")
+            )
+            if not display_url and "images" in item and item["images"]:
+                display_url = item["images"][0]
+            if not display_url and "sidecarChildren" in item and item["sidecarChildren"]:
+                display_url = item["sidecarChildren"][0].get("displayUrl")
+
             if display_url:
-                res = requests.get(display_url, timeout=5)
-                if res.status_code == 200:
+                res = requests.get(display_url, timeout=6)
+                if res.status_code == 200 and len(res.content) > 3000:
                     img = Image.open(io.BytesIO(res.content))
                     downloaded_images.append(optimize_image(img))
             break
@@ -703,7 +714,7 @@ if not is_radar:
             
             reklam_url = st.text_input("Web Sayfası / Ürün Linki", placeholder="https://www.instagram.com/p/... veya site adresi")
             if reklam_url and "instagram.com" in reklam_url.lower():
-                st.success("🔗 Instagram linki algılandı. Apify motoru ile görsel ve içerik otomatik çekilecektir.")
+                st.success("🔗 Instagram linki algılandı. Gelişmiş Apify motoru ile görsel ve içerik otomatik çekilecektir.")
 
             reklam_metni = st.text_area("Reklam Metni / Ticari İddialar / Caption", height=120, placeholder="İncelenmesi talep edilen metin veya iddiaları giriniz...")
             
@@ -746,7 +757,7 @@ if not is_radar:
                     st.session_state.analiz_gorselleri = []
                     
                     if reklam_url:
-                        with st.spinner("Apify ve web kazıma motoru ile içerik ve görsel taranıyor..."):
+                        with st.spinner("Apify görsel ve metin motoru çalışıyor (Tıbbi cihaz / enjektör tespiti aktif)..."):
                             url_metni, web_gorselleri = fetch_url_data(reklam_url, apify_key)
                     
                     birlestirilmis_metin = f"{reklam_metni}\n\n[Kaynak Link]: {reklam_url}\n{url_metni}" if reklam_url else reklam_metni
@@ -762,13 +773,13 @@ if not is_radar:
                             st.session_state.analiz_gorselleri.append(wg)
                     
                     sistem_metodolojisi = f"""
-SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
+SEN; TİCARET BAKANLIĞI REKLAM KURULU İÇTİHATLARI, SAĞLIK BAKANLIĞI TİTCK MEVZUATI VE 6502 SAYILI KANUN KAPSAMINDA UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN.
 Derinlemesine düşünme (Chain of Thought) yeteneğini kullanarak, yüklenen görselleri, metinleri, başlıkları ve ambalaj rozetlerini adım adım analiz et.
 
-KESİN KURAL (SIFIR HALÜSİNASYON VE MARKA KONTROLÜ):
-1. Görsellerdeki ürün isimlerini, sürüm/versiyon numaralarını (örn. 3.0), hacim ve gramaj bilgilerini (örn. 90mg/3mL) bir OCR cihazı hassasiyetiyle oku. Asla uydurma.
+KESİN KURAL (SIFIR HALÜSİNASYON VE TIBBİ CİHAZ / KOZMETİK AYRIMI):
+1. Görsellerdeki ürün isimlerini, sürüm/versiyon numaralarını, hacim/gramaj bilgilerini (örn. 90mg/3mL, enjektör, steril pre-filled syringe vb.) bir OCR cihazı hassasiyetiyle oku. Ürün enjektör, implant veya steril solüsyon içeriyorsa asla kozmetik olarak değerlendirme; doğrudan TIBBİ CİHAZ (Tıbbi Cihaz Satış, Reklam ve Tanıtım Yönetmeliği m. 15) kurallarını uygula.
 2. İncelediğin içerik ürünün üreticisine veya markanın kendi resmi sayfasına aitse (1. taraf), KESİNLİKLE Sosyal Medya Etkileyicileri Kılavuzu kurallarını uygulama ve marka kendi postunda #işbirliği / #reklam etiketi koymadı diye ihlal uydurma.
-3. Görselin kompozisyonunu (örn. modelin kıyafeti, arka plan) hukuki bir delil gibi incele ve bunun tüketici algısına etkisini değerlendir.
+3. Görselin kompozisyonunu hukuki bir delil gibi incele ve bunun tüketici algısına etkisini değerlendir.
 
 === EMSAL REKLAM KURULU İÇTİHATLARI ===
 {ilgili_emsaller}
@@ -806,17 +817,17 @@ RAPOR FORMATI:
 ### [İHLAL DERECESİ: AĞIR / ORTA / HAFİF] - İhlal Skoru: [0-100]
 
 ### I. HAKSIZ REKABET VE MEVZUATA AYKIRILIK TESPİTİ
-* **[Hukuka Aykırı İfade/Görsel Algı 1]:** (6502 ve TTK uyarınca haksız ticari uygulama gerekçesi)
+* **[Hukuka Aykırı İfade/Görsel Algı 1]:** (6502, TTK ve Tıbbi Cihaz Yönetmeliği uyarınca gerekçe)
 * **[Hukuka Aykırı İfade/Görsel Algı 2]:**
 
 ### II. REKLAM KURULU EMSAL İÇTİHATLARI
 * **Emsal Karar 1:** (Dosya No, İhlal Edilen Kural, Ceza Tutarı)
 
 ### III. RAKİBE UYGULANABİLECEK İDARİ YAPTIRIMLAR
-* **6502 m. 77 Para Cezası ve İdari Tedbirler**
+* **6502 m. 77 Para Cezası ve TİTCK Tedbirleri**
 
 ### IV. ŞİKAYET VE BAŞVURU STRATEJİSİ
-* **Reklam Kurulu Başvuru Argümanları & Delil Tespiti**
+* **Reklam Kurulu ve TİTCK Başvuru Argümanları & Delil Tespiti**
 
 ### V. YASAL ŞERH
 "Bu rapor teknik bir ön risk analizi niteliğinde olup, nihai hukuki mütalaa yerine geçmez."
@@ -828,7 +839,7 @@ RAPOR FORMATI:
                     rapor_alani = st.empty()
                     try:
                         tam_rapor = ""
-                        with st.spinner("Apify Verileri ile Gelişmiş Yapay Zeka Sentez Motoru (OCR & Katı Mantık) çalışıyor..."):
+                        with st.spinner("Apify Görsel ve Yapay Zeka Sentez Motoru çalışıyor..."):
                             for parca in generate_multi_role_synthesis_stream(icerik_listesi, base_prompt, is_danisan):
                                 tam_rapor += parca
                                 rapor_alani.markdown(tam_rapor + "▌")
@@ -938,7 +949,7 @@ ADRES: {s_edilen_adr}
 
 GÖREVİN: Resmi bir REKLAM KURULU ŞİKAYET DİLEKÇESİ hazırlamaktır.
 KESİN KURALLAR VE SIFIR HALÜSİNASYON DİREKTİFİ:
-1. Dilekçeyi yazarken ürün adı, model sürümü, hacim ve gramaj gibi bilgileri asla kendin uydurma. Bu bilgileri doğrudan sana sunduğum EKTEKİ GÖRSELLERİN ÜZERİNİ OKUYARAK tespit et.
+1. Dilekçeyi yazarken ürün adı, model sürümü, hacim ve gramaj gibi bilgileri asla kendin uydurma. Bu bilgileri doğrudan sana sunduğum EKTEKİ GÖRSELLERİN ÜZERİNİ OKUYARAK tespit et. Ürün tıbbi cihaz veya enjektör ise Tıbbi Cihaz Yönetmeliği m. 15 ihlallerini vurgula.
 2. Marka kendi resmi sayfasında paylaşım yapıyorsa asla örtülü reklam / etiket eksikliği iddiasına dilekçede yer verme.
 3. Markdown karakterleri (*, #, ---) kullanma, düz metin ver.
 4. "müstakilen" kelimesini asla kullanma.
@@ -955,7 +966,7 @@ VEKİLİ / İLETİŞİM: {s_vekil}
 ŞİKAYET EDİLEN: {s_edilen}
 ADRES: {s_edilen_adr}
 İNCELEME LİNKİ: {s_link}
-ŞİKAYET KONUSU: İlgililer hakkında 6502 sayılı Kanun ve Ticari Reklam Yönetmeliği ihlali nedeniyle tedbiren durdurma ve idari para cezası talebidir.
+ŞİKAYET KONUSU: İlgililer hakkında 6502 sayılı Kanun, Tıbbi Cihaz Yönetmeliği ve Ticari Reklam Yönetmeliği ihlali nedeniyle tedbiren durdurma ve idari para cezası talebidir.
 
 AÇIKLAMALAR:
 (Giriş paragrafı)
