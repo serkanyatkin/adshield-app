@@ -298,7 +298,6 @@ KESİN KURALLAR:
             return
 
 def fetch_instagram_via_apify(url, apify_token):
-    """Apify Instagram Scraper kullanarak çoklu alan taramasıyla görsel ve metin çeker."""
     if not apify_token or not url:
         return "", []
     try:
@@ -396,6 +395,11 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
     try:
         response = requests.get(url, timeout=7)
         data = response.json()
+        
+        # HATA YAKALAMA (SESSİZCE YUTMA YERİNE EKRANA BASMA)
+        if "error" in data:
+            return kategori, [{"baslik": "⚠️ API HATASI", "url": "#", "snippet": f"SerpApi Hata Mesajı: {data['error']}. Lütfen API kotanızı veya anahtarınızı kontrol edin."}]
+
         link_havuzu = []
         raw_items = []
         if "organic_results" in data:
@@ -411,25 +415,25 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
                 continue
             link_havuzu.append({"baslik": title, "url": link, "snippet": snippet})
         return kategori, link_havuzu
-    except Exception:
-        return kategori, []
+    except Exception as e:
+        # Sunucu çökmesi veya bağlantı hatasını da bas
+        return kategori, [{"baslik": "⚠️ BAĞLANTI HATASI", "url": "#", "snippet": f"Sorgu yapılamadı. Hata: {str(e)}"}]
 
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val or not urun_adi.strip():
         return {}
     temiz_urun = urun_adi.strip()
     
-    # Katı tırnak işaretleri kaldırılarak esnek arama sağlandı
+    # EN SADE, EN GARANTİ ARAMA (Google Dork kısıtlamaları esnetildi)
     queries = {
-        "📸 Instagram Gönderileri (Post)": f'site:instagram.com/p/ {temiz_urun}',
-        "🎬 Instagram Videoları (Reels)": f'site:instagram.com/reel/ {temiz_urun}',
+        "📸 Instagram": f'site:instagram.com {temiz_urun}',
         "🛒 Trendyol & Hepsiburada": f'site:trendyol.com OR site:hepsiburada.com {temiz_urun}',
-        "📦 Diğer E-Ticaret Satış Noktaları": f'{temiz_urun} sipariş satın al',
-        "🌐 Resmi Web Sitesi": f'site:{marka_domain} {temiz_urun}' if marka_domain else f'{temiz_urun} orjinal satış'
+        "📦 Diğer E-Ticaret": f'{temiz_urun} sipariş OR satın al',
+        "🌐 Resmi Web Sitesi": f'site:{marka_domain} {temiz_urun}' if marka_domain else f'{temiz_urun} resmi site'
     }
     
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    with ThreadPoolExecutor(max_workers=4) as executor:
         futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
         for f in futures:
             kat, sonuclar = f.result()
