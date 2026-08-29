@@ -13,13 +13,9 @@ import re
 import requests
 import io
 import urllib.parse
-from urllib.parse import urljoin
 from concurrent.futures import ThreadPoolExecutor
 import textwrap
 import time
-from apify_client import ApifyClient
-import threading
-from http.server import BaseHTTPRequestHandler, HTTPServer
 import json
 import base64
 
@@ -29,68 +25,28 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
-# ----------------- LOCAL WEBHOOK (EKLENTİ ALICISI - PORT 8085) -----------------
-class AdShieldWebhookHandler(BaseHTTPRequestHandler):
-    def log_message(self, format, *args):
-        pass
-
-    def do_OPTIONS(self):
-        self.send_response(200, "ok")
-        self.send_header('Access-Control-Allow-Origin', '*')
-        self.send_header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS')
-        self.send_header("Access-Control-Allow-Headers", "X-Requested-With, Content-type")
-        self.end_headers()
-
-    def do_POST(self):
-        try:
-            content_length = int(self.headers['Content-Length'])
-            post_data = self.rfile.read(content_length)
-            data = json.loads(post_data)
+# ----------------- CANLI KUYRUK YÖNETİMİ (UPSTASH REST API) -----------------
+def eklenti_verisini_getir():
+    """Upstash Redis üzerinden eklentiden gelen en son görsel ve URL verisini çeker."""
+    try:
+        u_url = st.secrets.get("UPSTASH_REDIS_REST_URL")
+        u_token = st.secrets.get("UPSTASH_REDIS_REST_TOKEN")
+        if not u_url or not u_token:
+            return None
             
-            with open('adshield_queue.json', 'w', encoding='utf-8') as f:
-                json.dump(data, f)
-                
-            self.send_response(200)
-            self.send_header('Access-Control-Allow-Origin', '*')
-            self.end_headers()
-            self.wfile.write(b"OK")
-        except Exception as e:
-            print(f"Post Hatası: {e}")
-            self.send_response(500)
-            self.end_headers()
-
-def run_webhook_server():
-    try:
-        # '' bırakarak IP çakışmasını önlüyoruz ve Port'u 8085 yapıyoruz
-        httpd = HTTPServer(('', 8085), AdShieldWebhookHandler)
-        print("AdShield Dinleyicisi 8085 portunda başarıyla başlatıldı!")
-        httpd.serve_forever()
+        headers = {"Authorization": f"Bearer {u_token}"}
+        res = requests.get(f"{u_url}/get/adshield_latest", headers=headers, timeout=5)
+        
+        if res.status_code == 200:
+            data = res.json()
+            raw_result = data.get("result")
+            if raw_result:
+                # Veriyi aldıktan sonra kuyruktan temizle
+                requests.get(f"{u_url}/del/adshield_latest", headers=headers, timeout=3)
+                return json.loads(raw_result)
     except Exception as e:
-        print(f"ALICI SUNUCU BAŞLATILAMADI (Port 8085 dolu olabilir): {e}")
-
-if "webhook_thread" not in st.session_state:
-    t = threading.Thread(target=run_webhook_server, daemon=True)
-    t.start()
-    st.session_state.webhook_thread = True
-
-# ----------------- EKLENTİ VERİSİNİ KONTROL ET VE OTOMATİK YÜKLE -----------------
-if os.path.exists('adshield_queue.json'):
-    try:
-        with open('adshield_queue.json', 'r', encoding='utf-8') as f:
-            veri = json.load(f)
-        
-        st.session_state.eklenti_url = veri.get('url', '')
-        b64_img = veri.get('image', '')
-        if ',' in b64_img:
-            b64_img = b64_img.split(',')[1]
-        
-        img_data = base64.b64decode(b64_img)
-        st.session_state.eklenti_img = Image.open(io.BytesIO(img_data))
-        
-        os.remove('adshield_queue.json')
-    except Exception as e:
-        print(f"Dosya okuma hatası: {e}")
-# -------------------------------------------------------------------
+        print(f"Kuyruk okuma hatası: {e}")
+    return None
 
 # Sayfa İçi Akıllı Kaydırma Fonksiyonu
 def trigger_scroll(position="top"):
@@ -158,7 +114,7 @@ with st.sidebar:
     st.header("Sistem Ayarları")
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
-    st.caption("ℹ️ Eklenti entegrasyonu başarıyla kuruldu (Port 8085). Apify API gerekmediği için kaldırılmıştır.")
+    st.caption("ℹ️ Canlı Upstash Redis bulut köprüsü aktiftir.")
 
 def optimize_image(img, max_dimension=2500):
     img = img.convert("RGB")
@@ -217,33 +173,6 @@ KESİN KURALLAR:
             yield f"\nSentezleme hatası: {err_str}"
             return
 
-def download_single_img(url, headers):
-    try:
-        res = requests.get(url, headers=headers, timeout=2.5)
-        if res.status_code == 200 and len(res.content) > 3000:
-            pil_img = Image.open(io.BytesIO(res.content))
-            return optimize_image(pil_img)
-    except Exception:
-        pass
-    return None
-
-def fetch_url_data(url, apify_token=""):
-    clean_text = ""
-    downloaded_images = []
-    headers = {'User-Agent': 'Mozilla/5.0'}
-    try:
-        res = requests.get(url.strip(), headers=headers, timeout=3)
-        if res.status_code == 200:
-            try:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(res.text, 'html.parser')
-                clean_text = ' '.join(soup.get_text(separator=' ').split())[:2500]
-            except ImportError:
-                clean_text = re.sub(r'<[^>]+>', ' ', res.text)[:2500]
-    except Exception:
-        pass
-    return clean_text, downloaded_images
-
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
     try:
@@ -289,17 +218,6 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
 def get_relevant_emsaller(metin, sektor, top_k=2):
     return "Emsal karar havuzu aktif.", ["1. Emsal Karar Özeti (Örnek)"]
 
-def create_pdf(report_text, baslik_metni):
-    pdf = FPDF(); pdf.add_page(); pdf.set_font("Helvetica", "B", 12)
-    pdf.cell(0, 10, baslik_metni, ln=True, align="C"); pdf.set_font("Helvetica", "", 10)
-    for line in report_text.split('\n'): pdf.cell(0, 6, line.encode('latin-1', 'replace').decode('latin-1'), ln=True)
-    return bytes(pdf.output())
-
-def create_docx(dilekce_text):
-    doc = docx.Document(); doc.add_paragraph(dilekce_text)
-    docx_io = io.BytesIO(); doc.save(docx_io); docx_io.seek(0)
-    return docx_io.getvalue()
-
 def generate_content_safe_text(contents):
     if not api_key:
         return "API anahtarı eksik."
@@ -309,7 +227,7 @@ def generate_content_safe_text(contents):
     return res.text if res else "Hata."
 
 # Session States
-for k in ["rapor_sonucu", "dilekce_sonucu", "chat_history", "analiz_gorselleri", "radar_link_sonuclari"]:
+for k in ["rapor_sonucu", "dilekce_sonucu", "chat_history", "analiz_gorselleri", "radar_link_sonuclari", "eklenti_img", "eklenti_url"]:
     if k not in st.session_state: st.session_state[k] = None
 
 st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
@@ -329,16 +247,12 @@ if not is_radar:
         with st.container(border=True):
             st.markdown(f'<div class="section-heading" lang="tr">1. Parametreler & Veri Yükleme</div>', unsafe_allow_html=True)
 
-            # Eklentiden Gelen Veri Bölümü
-            if st.button("📥 Eklentiden Gelen Yeni Görüntüyü Al", use_container_width=True):
-                st.rerun() # Sayfayı yeniler ve üstteki JSON okuma bloğunu çalıştırır
-
             reklam_url_default = ""
-            if "eklenti_img" in st.session_state and st.session_state.eklenti_img:
-                st.success("🎯 Chrome Eklentisinden Görüntü Yakalandı!")
-                st.image(st.session_state.eklenti_img, caption="Analiz Edilecek Eklenti Görseli", use_container_width=True)
+            if st.session_state.eklenti_img:
+                st.success("🎯 Yakalanan Görüntü Analize Hazır!")
+                st.image(st.session_state.eklenti_img, caption="Analiz Edilecek Görsel", use_container_width=True)
                 reklam_url_default = st.session_state.get("eklenti_url", "")
-                if st.button("🧹 Eklenti Görüntüsünü Temizle"):
+                if st.button("🧹 Görüntüyü Temizle"):
                     st.session_state.eklenti_img = None
                     st.session_state.eklenti_url = ""
                     st.rerun()
@@ -359,18 +273,15 @@ if not is_radar:
             
             if analiz_butonu:
                 trigger_scroll("top")
-                url_metni = ""
                 st.session_state.analiz_gorselleri = []
                 
-                # Eklentiden gelen görseli analiz havuzuna ekle
-                if "eklenti_img" in st.session_state and st.session_state.eklenti_img:
+                if st.session_state.eklenti_img:
                     st.session_state.analiz_gorselleri.append(st.session_state.eklenti_img)
                 
-                # Manuel yüklenenleri ekle
                 if yuklenen_gorseller:
                     for g in yuklenen_gorseller: st.session_state.analiz_gorselleri.append(optimize_image(Image.open(g)))
                 
-                birlestirilmis_metin = f"{reklam_metni}\n\n[Link]: {reklam_url}\n{url_metni}"
+                birlestirilmis_metin = f"{reklam_metni}\n\n[Link]: {reklam_url}"
                 ilgili_emsaller, emsal_liste = get_relevant_emsaller(birlestirilmis_metin, sektor)
                 
                 sistem_metodolojisi = f"SEN UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN. Veriler: Sektör: {sektor} | Mecra: {mecra} | İddialar: {birlestirilmis_metin}"
@@ -395,7 +306,7 @@ if not is_radar:
                 with st.container(height=450):
                     st.markdown(st.session_state.rapor_sonucu)
                 if not is_danisan:
-                    if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla (Word)", type="primary"):
+                    if st.button("Resmi Reklam Kurulu Şikayet Dilekçesini Hazırla", type="primary"):
                         with st.spinner("Dilekçe yazılıyor..."):
                             st.session_state.dilekce_sonucu = generate_content_safe_text([st.session_state.rapor_sonucu + "\nBuna göre şikayet dilekçesi yaz."])
                             st.rerun()
@@ -410,6 +321,32 @@ else:
             st.markdown('<div class="section-heading" lang="tr">📡 Pazar Radarı</div>', unsafe_allow_html=True)
             radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="incia bebek yağı")
             radar_tara_butonu = st.button("🚀 Hedef Linkleri Tespit Et", type="primary")
+            
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">📥 Yakalanan Reklamlar</div>', unsafe_allow_html=True)
+            if st.button("📥 Eklentiden Gelen Yeni Görüntüyü Al", use_container_width=True):
+                with st.spinner("Canlı kuyruktan veri alınıyor..."):
+                    gelen_veri = eklenti_verisini_getir()
+                    if gelen_veri:
+                        st.session_state.eklenti_url = gelen_veri.get('url', '')
+                        b64_img = gelen_veri.get('image', '')
+                        if ',' in b64_img:
+                            b64_img = b64_img.split(',')[1]
+                        
+                        b64_img = b64_img.strip().replace('\n', '').replace('\r', '')
+                        missing_padding = len(b64_img) % 4
+                        if missing_padding != 0:
+                            b64_img += '=' * (4 - missing_padding)
+                            
+                        img_bytes = base64.b64decode(b64_img)
+                        st.session_state.eklenti_img = Image.open(io.BytesIO(img_bytes)).convert("RGB")
+                        st.rerun()
+                    else:
+                        st.warning("Henüz eklentiden gönderilen yeni bir görüntü bulunamadı.")
+            
+            if st.session_state.eklenti_img:
+                st.success("🎯 Görüntü başarıyla çekildi! Analiz için üst menüden 'Denetim Modu'na geçebilirsiniz.")
+                st.image(st.session_state.eklenti_img, caption="Yakalanan Görsel", use_container_width=True)
 
     with sag_kolon:
         with st.container(border=True):
