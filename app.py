@@ -43,7 +43,12 @@ def eklenti_verisini_getir():
             if raw_result:
                 # Veriyi aldıktan sonra kuyruktan temizle
                 requests.get(f"{u_url}/del/adshield_latest", headers=headers, timeout=3)
-                return json.loads(raw_result)
+                
+                # Çift stringify sorununu çözen akıllı parse işlemi
+                parsed = json.loads(raw_result)
+                if isinstance(parsed, str):
+                    parsed = json.loads(parsed)
+                return parsed
     except Exception as e:
         print(f"Kuyruk okuma hatası: {e}")
     return None
