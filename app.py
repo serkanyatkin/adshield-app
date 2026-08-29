@@ -138,15 +138,20 @@ st.markdown("""
 
 try:
     api_key = st.secrets.get("GEMINI_API_KEY", None)
-    serpapi_key = st.secrets.get("SERPAPI_API_KEY", "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9")
 except:
     api_key = None
-    serpapi_key = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
+
+# SABİT SERPAPI ANAHTARI
+SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
     st.header("Sistem Ayarları")
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
-    serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key, type="password")
+    serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
+
+# Kullanıcı arayüzden yanlışlıkla silse bile sistemin çökmemesi için güvenlik kilidi
+if not serpapi_key:
+    serpapi_key = SABIT_SERP_KEY
 
 TARGET_MODEL = "gemini-3.6-flash"
 
