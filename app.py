@@ -141,7 +141,6 @@ try:
 except:
     api_key = None
 
-# SABİT SERPAPI ANAHTARI
 SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
@@ -149,7 +148,6 @@ with st.sidebar:
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
 
-# Kullanıcı arayüzden yanlışlıkla silse bile sistemin çökmemesi için güvenlik kilidi
 if not serpapi_key:
     serpapi_key = SABIT_SERP_KEY
 
@@ -182,8 +180,8 @@ KESİN KURALLAR:
                 return
         except Exception as e:
             if "429" in str(e) or "Quota" in str(e):
-                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {30 * (attempt+1)} saniye uykuya geçiyor...\n\n"
-                time.sleep(30 * (attempt + 1))
+                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {20 * (attempt+1)} saniye uykuya geçiyor...\n\n"
+                time.sleep(20 * (attempt + 1))
                 continue
             yield f"\nSentezleme hatası: {str(e)}"
             return
@@ -200,7 +198,7 @@ def analiz_et_tekil(gorsel, url, sektor, mecra):
         except Exception as e:
             hata = str(e)
             if "429" in hata or "Quota" in hata:
-                time.sleep(30 * (deneme + 1))
+                time.sleep(20 * (deneme + 1))
                 continue
             return f"Hata oluştu: {hata}"
     return "Analiz tamamlanamadı: Google Gemini API limitleri kalıcı olarak aşıldı. Lütfen daha sonra tekrar deneyin."
@@ -308,7 +306,7 @@ else:
             radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="incia bebek yağı")
             radar_tara_butonu = st.button("🚀 Hedef Linkleri Tespit Et", type="primary")
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📥 Toplu Görüntü Havuzu (API Kota Korumalı)</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📥 Toplu Görüntü Havuzu (Sıralı / Güvenli Mod)</div>', unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📥 Tüm Kuyruğu Al", use_container_width=True):
@@ -330,15 +328,20 @@ else:
                 s_mecra = st.selectbox("Toplu Analiz İçin Mecra", ["İnternet", "Televizyon", "Açık Hava"])
                 
                 if st.button("🚀 Tüm Havuzu Analiz Et", type="primary"):
-                    progress_text = "Vakalar analiz ediliyor (API kotası korunarak)..."
+                    progress_text = "Vakalar sırayla analiz ediliyor..."
                     my_bar = st.progress(0, text=progress_text)
+                    status_text = st.empty()
                     
                     for i, vaka in enumerate(st.session_state.vaka_havuzu):
                         if i > 0:
-                            time.sleep(15)
+                            for sec in range(15, 0, -1):
+                                status_text.warning(f"Ücretsiz kota korunuyor. Sıradaki analize {sec} saniye sonra geçilecek...")
+                                time.sleep(1)
+                        status_text.info(f"Vaka #{i+1} analiz ediliyor. Lütfen bekleyin...")
                         vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"], s_sektor, s_mecra)
                         my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu), text=f"Tamamlanan İşlem: {i+1}/{len(st.session_state.vaka_havuzu)}")
                                 
+                    status_text.empty()
                     st.success("Tüm analizler tamamlandı!")
                     st.rerun()
 
@@ -346,7 +349,8 @@ else:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">📋 Analiz Sonuçları & Linkler</div>', unsafe_allow_html=True)
             if radar_tara_butonu:
-                st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, "", serpapi_key)
+                with st.spinner("Taranıyor..."):
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, "", serpapi_key)
             if st.session_state.radar_link_sonuclari:
                 alt_sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
                 for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
