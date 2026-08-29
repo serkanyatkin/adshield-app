@@ -8,7 +8,6 @@ import os
 import requests
 import io
 import urllib.parse
-from concurrent.futures import ThreadPoolExecutor
 import time
 import json
 import base64
@@ -39,7 +38,6 @@ def eklenti_verilerini_getir():
         pass
     return []
 
-# ----------------- AKILLI WORD (DOCX) OLUŞTURUCU -----------------
 def create_docx(vaka_listesi):
     doc = docx.Document()
     
@@ -168,7 +166,7 @@ KESİN KURALLAR:
 4. Görsel üzerinde ambalaj, mg, enjektör gibi "tıbbi cihaz" işaretleri varsa asla kozmetik muamelesi yapma."""
     
     model = get_working_model()
-    for attempt in range(3):
+    for attempt in range(4):
         try:
             response = model.generate_content([single_master_prompt] + contents, stream=False)
             if response and response.text:
@@ -179,8 +177,8 @@ KESİN KURALLAR:
                 return
         except Exception as e:
             if "429" in str(e) or "Quota" in str(e):
-                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {15 * (attempt+1)} saniye uykuya geçiyor...\n\n"
-                time.sleep(15 * (attempt + 1))
+                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {30 * (attempt+1)} saniye uykuya geçiyor...\n\n"
+                time.sleep(30 * (attempt + 1))
                 continue
             yield f"\nSentezleme hatası: {str(e)}"
             return
@@ -190,17 +188,17 @@ def analiz_et_tekil(gorsel, url, sektor, mecra):
     model = genai.GenerativeModel(model_name=TARGET_MODEL)
     prompt = f"SEN UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN. Sektör: {sektor} | Mecra: {mecra} | URL: {url}\nLütfen görseli incele, mevzuat uyumunu analiz et ve riskleri listele. Antet kullanma."
     
-    for deneme in range(3):
+    for deneme in range(4):
         try:
             res = model.generate_content([prompt, gorsel])
             return res.text
         except Exception as e:
             hata = str(e)
             if "429" in hata or "Quota" in hata:
-                time.sleep(15 * (deneme + 1))
+                time.sleep(30 * (deneme + 1))
                 continue
             return f"Hata oluştu: {hata}"
-    return "❌ Kritik Hata: API kotası aşıldı ve tüm yeniden deneme (retry) süreleri tükendi."
+    return "Analiz tamamlanamadı: Google Gemini API limitleri kalıcı olarak aşıldı. Lütfen daha sonra tekrar deneyin."
 
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
@@ -230,17 +228,15 @@ def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
         "📦 Diğer E-Ticaret": f'{t} sipariş OR satın al -inurl:arama -inurl:search -inurl:kategori'
     }
     kategorize_sonuclar = {}
-    with ThreadPoolExecutor(max_workers=3) as executor:
-        futures = [executor.submit(tekil_sorgu_at, kat, q, api_key_val) for kat, q in queries.items()]
-        for f in futures:
-            kat, sonuclar = f.result()
-            gorulenler = set()
-            tekil_list = []
-            for item in sonuclar:
-                if item["url"] not in gorulenler:
-                    gorulenler.add(item["url"])
-                    tekil_list.append(item)
-            kategorize_sonuclar[kat] = tekil_list
+    for kat, q in queries.items():
+        kat_res, sonuclar = tekil_sorgu_at(kat, q, api_key_val)
+        gorulenler = set()
+        tekil_list = []
+        for item in sonuclar:
+            if item["url"] not in gorulenler:
+                gorulenler.add(item["url"])
+                tekil_list.append(item)
+        kategorize_sonuclar[kat_res] = tekil_list
     return kategorize_sonuclar
 
 for k in ["rapor_sonucu", "dilekce_sonucu", "analiz_gorselleri", "radar_link_sonuclari", "eklenti_img", "eklenti_url"]:
@@ -307,7 +303,7 @@ else:
             radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="incia bebek yağı")
             radar_tara_butonu = st.button("🚀 Hedef Linkleri Tespit Et", type="primary")
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">📥 Toplu Görüntü Havuzu (Paralel İşleme)</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">📥 Toplu Görüntü Havuzu (API Kota Korumalı)</div>', unsafe_allow_html=True)
             col1, col2 = st.columns(2)
             with col1:
                 if st.button("📥 Tüm Kuyruğu Al", use_container_width=True):
@@ -328,19 +324,17 @@ else:
                 s_sektor = st.selectbox("Toplu Analiz İçin Sektör", ["Kozmetik & Kişisel Bakım", "Takviye Edici Gıda", "E-Ticaret"])
                 s_mecra = st.selectbox("Toplu Analiz İçin Mecra", ["İnternet", "Televizyon", "Açık Hava"])
                 
-                if st.button("🚀 Tüm Havuzu Paralel Analiz Et", type="primary"):
-                    progress_text = "Vakalar çoklu iş parçacıklarıyla (Thread) analiz ediliyor..."
+                if st.button("🚀 Tüm Havuzu Analiz Et", type="primary"):
+                    progress_text = "Vakalar analiz ediliyor (API kotası korunarak)..."
                     my_bar = st.progress(0, text=progress_text)
                     
-                    with st.spinner("API sınırlarına karşı akıllı kalkan devrede..."):
-                        with ThreadPoolExecutor(max_workers=3) as executor:
-                            futures = [executor.submit(analiz_et_tekil, vaka["gorsel"], vaka["url"], s_sektor, s_mecra) for vaka in st.session_state.vaka_havuzu]
-                            
-                            for i, future in enumerate(futures):
-                                st.session_state.vaka_havuzu[i]["rapor"] = future.result()
-                                my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu), text=f"Tamamlanan İşlem: {i+1}/{len(st.session_state.vaka_havuzu)}")
+                    for i, vaka in enumerate(st.session_state.vaka_havuzu):
+                        if i > 0:
+                            time.sleep(15)
+                        vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"], s_sektor, s_mecra)
+                        my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu), text=f"Tamamlanan İşlem: {i+1}/{len(st.session_state.vaka_havuzu)}")
                                 
-                    st.success("Tüm eşzamanlı analizler tamamlandı!")
+                    st.success("Tüm analizler tamamlandı!")
                     st.rerun()
 
     with sag_kolon:
