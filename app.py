@@ -169,7 +169,7 @@ KESİN KURALLAR:
 4. Görsel üzerinde ambalaj, mg, enjektör gibi "tıbbi cihaz" işaretleri varsa asla kozmetik muamelesi yapma."""
     
     model = get_working_model()
-    for attempt in range(4):
+    for attempt in range(3):
         try:
             response = model.generate_content([single_master_prompt] + contents, stream=False)
             if response and response.text:
@@ -180,8 +180,8 @@ KESİN KURALLAR:
                 return
         except Exception as e:
             if "429" in str(e) or "Quota" in str(e):
-                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {20 * (attempt+1)} saniye uykuya geçiyor...\n\n"
-                time.sleep(20 * (attempt + 1))
+                yield f"\n\n> ⏳ API Kotası Doldu. Sistem {15 * (attempt+1)} saniye uykuya geçiyor...\n\n"
+                time.sleep(15 * (attempt + 1))
                 continue
             yield f"\nSentezleme hatası: {str(e)}"
             return
@@ -191,14 +191,14 @@ def analiz_et_tekil(gorsel, url, sektor, mecra):
     model = genai.GenerativeModel(model_name=TARGET_MODEL)
     prompt = f"SEN UZMAN REKLAM HUKUKU BAŞDENETÇİSİSİN. Sektör: {sektor} | Mecra: {mecra} | URL: {url}\nLütfen görseli incele, mevzuat uyumunu analiz et ve riskleri listele. Antet kullanma."
     
-    for deneme in range(4):
+    for deneme in range(3):
         try:
             res = model.generate_content([prompt, gorsel])
             return res.text
         except Exception as e:
             hata = str(e)
             if "429" in hata or "Quota" in hata:
-                time.sleep(20 * (deneme + 1))
+                time.sleep(15 * (deneme + 1)) 
                 continue
             return f"Hata oluştu: {hata}"
     return "Analiz tamamlanamadı: Google Gemini API limitleri kalıcı olarak aşıldı. Lütfen daha sonra tekrar deneyin."
@@ -208,7 +208,11 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
     try:
         response = requests.get(url, timeout=20)
         data = response.json()
-        if "error" in data: return kategori, [{"baslik": "⚠️ API HATASI", "url": "#", "snippet": data['error']}]
+        
+        # Eğer SerpApi'den hata dönerse veya Google sonuç bulamazsa çökmesini engeller
+        if "error" in data: 
+            return kategori, [{"baslik": "Sonuç Bulunamadı / Engellendi", "url": "#", "snippet": data['error']}]
+            
         link_havuzu = []
         for result in data.get("organic_results", []):
             link = result.get("link", "")
@@ -218,6 +222,10 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
             yasakli = ["/giris", "/hesabim", "/sepetim", "auth", "login", "/sr?q=", "/sr", "/ara?q", "kategori", "/magaza/", "tum-urunler", "/search", "/arama"]
             if not link.startswith("http") or any(y in url_lower for y in yasakli): continue
             link_havuzu.append({"baslik": title, "url": link, "snippet": snippet})
+            
+        if not link_havuzu:
+            return kategori, [{"baslik": "Bu kategoride uygun sonuç bulunamadı.", "url": "#", "snippet": ""}]
+            
         return kategori, link_havuzu
     except Exception as e: 
         return kategori, [{"baslik": "⚠️ HATA", "url": "#", "snippet": str(e)}]
@@ -225,11 +233,14 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
 def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
+    
+    # ARAMA FİLTRELERİ ESNETİLDİ (Instagram hatasını çözer)
     queries = {
-        "📸 Instagram": f'site:instagram.com/p/ {t}',
-        "🛒 Pazaryeri Ürünleri": f'(site:trendyol.com OR site:hepsiburada.com) {t} -inurl:sr -inurl:ara -inurl:kategori -inurl:magaza',
-        "📦 Diğer E-Ticaret": f'{t} sipariş OR satın al -inurl:arama -inurl:search -inurl:kategori'
+        "📸 Instagram": f'site:instagram.com "{t}"',
+        "🛒 Pazaryeri Ürünleri": f'(site:trendyol.com OR site:hepsiburada.com) "{t}" -inurl:sr -inurl:ara -inurl:kategori -inurl:magaza',
+        "📦 Diğer E-Ticaret": f'"{t}" sipariş OR satın al -inurl:arama -inurl:search -inurl:kategori'
     }
+    
     kategorize_sonuclar = {}
     for kat, q in queries.items():
         kat_res, sonuclar = tekil_sorgu_at(kat, q, api_key_val)
