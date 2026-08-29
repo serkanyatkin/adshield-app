@@ -2,14 +2,9 @@ import streamlit as st
 import streamlit.components.v1 as components
 import google.generativeai as genai
 from PIL import Image
-from fpdf import FPDF
 import docx
-from docx.shared import Inches, Pt, RGBColor
-from docx.enum.text import WD_ALIGN_PARAGRAPH
-from datetime import datetime
+from docx.shared import Inches
 import os
-import glob
-import re
 import requests
 import io
 import urllib.parse
@@ -17,7 +12,6 @@ from concurrent.futures import ThreadPoolExecutor
 import time
 import json
 import base64
-import textwrap
 
 st.set_page_config(
     page_title="AdShield | Reklam Mevzuatı & Risk Denetim Platformu",
@@ -52,7 +46,7 @@ def eklenti_verilerini_getir():
         print(f"Toplu okuma hatası: {e}")
     return []
 
-# ----------------- ÇOKLU ÇIKTI OLUŞTURUCULAR -----------------
+# ----------------- WORD (DOCX) OLUŞTURUCU -----------------
 def create_docx(vaka_listesi):
     doc = docx.Document()
     for idx, veri in enumerate(vaka_listesi, 1):
@@ -73,76 +67,6 @@ def create_docx(vaka_listesi):
     docx_io = io.BytesIO()
     doc.save(docx_io)
     return docx_io.getvalue()
-
-def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
-    pdf = FPDF()
-    pdf.set_auto_page_break(auto=True, margin=15)
-    
-    for idx, veri in enumerate(vaka_listesi, 1):
-        pdf.add_page()
-        pdf.set_font("Helvetica", "B", 14)
-        
-        b_metin = f"{baslik_metni} - Vaka #{idx}".encode('latin-1', 'replace').decode('latin-1')
-        pdf.cell(0, 10, b_metin, ln=True, align="C")
-        pdf.set_font("Helvetica", "", 10)
-        
-        if veri.get("url"): 
-            guvenli_url = textwrap.fill(veri['url'], width=65, break_long_words=True)
-            pdf.multi_cell(0, 6, f"Kaynak:\n{guvenli_url}")
-            pdf.ln(3)
-            
-        if veri.get("gorsel"):
-            try:
-                temp_img = f"temp_adshield_{int(time.time())}_{idx}.png"
-                img_copy = veri["gorsel"].copy()
-                img_copy.thumbnail((800, 800), Image.Resampling.LANCZOS)
-                img_copy.save(temp_img, format="PNG")
-                
-                pdf.image(temp_img, x=50, y=pdf.get_y(), w=110)
-                pdf.set_y(pdf.get_y() + 115) 
-                os.remove(temp_img)
-            except:
-                pdf.multi_cell(0, 6, "[Görsel PDF'e basılamadı]")
-            
-        pdf.ln(5)
-        rapor_metni = veri.get("rapor", "")
-        rapor_metni = re.sub(r'[-*_]{4,}', '---', rapor_metni)
-        
-        for line in rapor_metni.split('\n'):
-            line = re.sub(r'(\S{50})', r'\1 ', line)
-            
-            if "**" in line:
-                parcalar = line.split("**")
-                for j, parca in enumerate(parcalar):
-                    if not parca: continue
-                    g_parca = parca.encode('latin-1', 'replace').decode('latin-1')
-                    
-                    if j % 2 != 0:
-                        pdf.set_font("Helvetica", "B", 10)
-                    else:
-                        pdf.set_font("Helvetica", "", 10)
-                        
-                    pdf.write(6, g_parca)
-                pdf.ln(6)
-            else:
-                pdf.set_font("Helvetica", "", 10)
-                sarmalanmis_satirlar = textwrap.wrap(line, width=70, break_long_words=True)
-                
-                if not sarmalanmis_satirlar:
-                    pdf.ln(5)
-                    continue
-                    
-                for p_line in sarmalanmis_satirlar:
-                    g_metin = p_line.encode('latin-1', 'replace').decode('latin-1')
-                    try:
-                        pdf.multi_cell(0, 6, g_metin)
-                    except Exception:
-                        try:
-                            pdf.multi_cell(0, 6, g_metin[:40] + "...")
-                        except:
-                            pass
-                            
-    return bytes(pdf.output())
 
 # Sayfa İçi Akıllı Kaydırma
 def trigger_scroll(position="top"):
@@ -190,12 +114,6 @@ with st.sidebar:
     st.header("Sistem Ayarları")
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
-
-def optimize_image(img, max_dimension=2000):
-    img = img.convert("RGB")
-    if max(img.size) > max_dimension:
-        img.thumbnail((max_dimension, max_dimension), Image.Resampling.LANCZOS)
-    return img
 
 TARGET_MODEL = "gemini-3.6-flash"
 
@@ -456,10 +374,5 @@ else:
                             st.info("Henüz analiz edilmedi.")
                             
                 if any(v.get("rapor") for v in st.session_state.vaka_havuzu):
-                    col_pdf, col_word = st.columns(2)
-                    with col_pdf:
-                        pdf_bytes = create_pdf(st.session_state.vaka_havuzu)
-                        st.download_button("⬇️ PDF İndir", data=pdf_bytes, file_name="adshield_toplu.pdf", mime="application/pdf", use_container_width=True)
-                    with col_word:
-                        word_bytes = create_docx(st.session_state.vaka_havuzu)
-                        st.download_button("⬇️ Word İndir", data=word_bytes, file_name="adshield_toplu.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+                    word_bytes = create_docx(st.session_state.vaka_havuzu)
+                    st.download_button("⬇️ Tüm Raporları Word (DOCX) Olarak İndir", data=word_bytes, file_name="adshield_toplu_rapor.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
