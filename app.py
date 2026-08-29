@@ -82,7 +82,8 @@ def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
         pdf.set_font("Helvetica", "", 10)
         
         if veri.get("url"): 
-            guvenli_url = re.sub(r'(\S{70})', r'\1 ', veri['url'])
+            # URL'leri 75 karakterde bir kesin olarak keser
+            guvenli_url = textwrap.fill(veri['url'], width=75, break_long_words=True)
             pdf.multi_cell(0, 6, f"Kaynak:\n{guvenli_url}")
             pdf.ln(3)
             
@@ -95,10 +96,21 @@ def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
         pdf.ln(5)
         rapor_metni = veri.get("rapor", "")
         
+        # Yapay zekanın ürettiği aşırı uzun Markdown ayraçlarını ve tabloları kısalt
+        rapor_metni = re.sub(r'[-*_]{4,}', '---', rapor_metni)
+        
         for line in rapor_metni.split('\n'):
-            guvenli_metin = line.encode('latin-1', 'replace').decode('latin-1')
-            guvenli_metin = re.sub(r'(\S{60})', r'\1 ', guvenli_metin)
-            pdf.multi_cell(0, 6, guvenli_metin)
+            # En kritik güvenlik kilidi: Metin parçalarını maksimum 75 karaktere hapseder
+            # break_long_words=True -> Arasında boşluk olmayan dev kelimeleri bile ortasından böler
+            sarmalanmis_satirlar = textwrap.wrap(line, width=75, break_long_words=True)
+            
+            if not sarmalanmis_satirlar:
+                pdf.ln(5)
+                continue
+                
+            for p_line in sarmalanmis_satirlar:
+                guvenli_metin = p_line.encode('latin-1', 'replace').decode('latin-1')
+                pdf.multi_cell(0, 6, guvenli_metin)
                 
     return bytes(pdf.output())
 
