@@ -81,54 +81,67 @@ def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
     for idx, veri in enumerate(vaka_listesi, 1):
         pdf.add_page()
         pdf.set_font("Helvetica", "B", 14)
-        pdf.cell(0, 10, f"{baslik_metni} - Vaka #{idx}", ln=True, align="C")
+        
+        b_metin = f"{baslik_metni} - Vaka #{idx}".encode('latin-1', 'replace').decode('latin-1')
+        pdf.cell(0, 10, b_metin, ln=True, align="C")
         pdf.set_font("Helvetica", "", 10)
         
         if veri.get("url"): 
-            # URL'leri 60 karakterde bir zorla kesiyoruz
-            guvenli_url = textwrap.fill(veri['url'], width=60, break_long_words=True)
+            guvenli_url = textwrap.fill(veri['url'], width=65, break_long_words=True)
             pdf.multi_cell(0, 6, f"Kaynak:\n{guvenli_url}")
             pdf.ln(3)
             
         if veri.get("gorsel"):
             try:
                 temp_img = f"temp_adshield_{int(time.time())}_{idx}.png"
-                veri["gorsel"].save(temp_img, format="PNG")
-                pdf.image(temp_img, w=170)
+                img_copy = veri["gorsel"].copy()
+                img_copy.thumbnail((800, 800), Image.Resampling.LANCZOS)
+                img_copy.save(temp_img, format="PNG")
+                
+                pdf.image(temp_img, x=50, y=pdf.get_y(), w=110)
+                pdf.set_y(pdf.get_y() + 115) 
                 os.remove(temp_img)
             except:
                 pdf.multi_cell(0, 6, "[Görsel PDF'e basılamadı]")
             
         pdf.ln(5)
         rapor_metni = veri.get("rapor", "")
-        
-        # Fazla uzun Markdown çizgilerini temizle
         rapor_metni = re.sub(r'[-*_]{4,}', '---', rapor_metni)
         
         for line in rapor_metni.split('\n'):
-            # 50 karakteri geçen tüm boşluksuz kelimeleri böl
             line = re.sub(r'(\S{50})', r'\1 ', line)
             
-            # Satırları garanti olması için maksimum 65 karakter genişliğinde sar
-            sarmalanmis_satirlar = textwrap.wrap(line, width=65, break_long_words=True)
-            
-            if not sarmalanmis_satirlar:
-                pdf.ln(5)
-                continue
-                
-            for p_line in sarmalanmis_satirlar:
-                guvenli_metin = p_line.encode('latin-1', 'replace').decode('latin-1')
-                
-                # ZIRH (HATA YAKALAMA): Eğer FPDF bu satırda milimetrik genişlik hatası verirse çökmesini engelle
-                try:
-                    pdf.multi_cell(0, 6, guvenli_metin)
-                except Exception:
-                    try:
-                        # Eğer çok uzun geldiyse zorla kısaltıp bas
-                        pdf.multi_cell(0, 6, guvenli_metin[:40] + "...")
-                    except:
-                        pass # Eğer hala hata veriyorsa satırı atla, ancak PDF'i ASLA çökertme
+            if "**" in line:
+                parcalar = line.split("**")
+                for j, parca in enumerate(parcalar):
+                    if not parca: continue
+                    g_parca = parca.encode('latin-1', 'replace').decode('latin-1')
+                    
+                    if j % 2 != 0:
+                        pdf.set_font("Helvetica", "B", 10)
+                    else:
+                        pdf.set_font("Helvetica", "", 10)
                         
+                    pdf.write(6, g_parca)
+                pdf.ln(6)
+            else:
+                pdf.set_font("Helvetica", "", 10)
+                sarmalanmis_satirlar = textwrap.wrap(line, width=70, break_long_words=True)
+                
+                if not sarmalanmis_satirlar:
+                    pdf.ln(5)
+                    continue
+                    
+                for p_line in sarmalanmis_satirlar:
+                    g_metin = p_line.encode('latin-1', 'replace').decode('latin-1')
+                    try:
+                        pdf.multi_cell(0, 6, g_metin)
+                    except Exception:
+                        try:
+                            pdf.multi_cell(0, 6, g_metin[:40] + "...")
+                        except:
+                            pass
+                            
     return bytes(pdf.output())
 
 # Sayfa İçi Akıllı Kaydırma
