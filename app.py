@@ -60,10 +60,13 @@ def create_docx(vaka_listesi):
         if veri.get("url"): 
             doc.add_paragraph(f"Kaynak Bağlantı: {veri['url']}")
         if veri.get("gorsel"):
-            img_io = io.BytesIO()
-            veri["gorsel"].save(img_io, format="PNG")
-            img_io.seek(0)
-            doc.add_picture(img_io, width=Inches(6.0))
+            try:
+                img_io = io.BytesIO()
+                veri["gorsel"].save(img_io, format="PNG")
+                img_io.seek(0)
+                doc.add_picture(img_io, width=Inches(6.0))
+            except:
+                pass
         doc.add_paragraph(veri.get("rapor", "Rapor oluşturulamadı."))
         if idx < len(vaka_listesi): 
             doc.add_page_break()
@@ -82,27 +85,32 @@ def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
         pdf.set_font("Helvetica", "", 10)
         
         if veri.get("url"): 
-            # URL'leri 75 karakterde bir kesin olarak keser
-            guvenli_url = textwrap.fill(veri['url'], width=75, break_long_words=True)
+            # URL'leri 60 karakterde bir zorla kesiyoruz
+            guvenli_url = textwrap.fill(veri['url'], width=60, break_long_words=True)
             pdf.multi_cell(0, 6, f"Kaynak:\n{guvenli_url}")
             pdf.ln(3)
             
         if veri.get("gorsel"):
-            temp_img = f"temp_adshield_{int(time.time())}_{idx}.png"
-            veri["gorsel"].save(temp_img, format="PNG")
-            pdf.image(temp_img, w=170)
-            os.remove(temp_img)
+            try:
+                temp_img = f"temp_adshield_{int(time.time())}_{idx}.png"
+                veri["gorsel"].save(temp_img, format="PNG")
+                pdf.image(temp_img, w=170)
+                os.remove(temp_img)
+            except:
+                pdf.multi_cell(0, 6, "[Görsel PDF'e basılamadı]")
             
         pdf.ln(5)
         rapor_metni = veri.get("rapor", "")
         
-        # Yapay zekanın ürettiği aşırı uzun Markdown ayraçlarını ve tabloları kısalt
+        # Fazla uzun Markdown çizgilerini temizle
         rapor_metni = re.sub(r'[-*_]{4,}', '---', rapor_metni)
         
         for line in rapor_metni.split('\n'):
-            # En kritik güvenlik kilidi: Metin parçalarını maksimum 75 karaktere hapseder
-            # break_long_words=True -> Arasında boşluk olmayan dev kelimeleri bile ortasından böler
-            sarmalanmis_satirlar = textwrap.wrap(line, width=75, break_long_words=True)
+            # 50 karakteri geçen tüm boşluksuz kelimeleri böl
+            line = re.sub(r'(\S{50})', r'\1 ', line)
+            
+            # Satırları garanti olması için maksimum 65 karakter genişliğinde sar
+            sarmalanmis_satirlar = textwrap.wrap(line, width=65, break_long_words=True)
             
             if not sarmalanmis_satirlar:
                 pdf.ln(5)
@@ -110,8 +118,17 @@ def create_pdf(vaka_listesi, baslik_metni="AdShield Denetim Raporu"):
                 
             for p_line in sarmalanmis_satirlar:
                 guvenli_metin = p_line.encode('latin-1', 'replace').decode('latin-1')
-                pdf.multi_cell(0, 6, guvenli_metin)
                 
+                # ZIRH (HATA YAKALAMA): Eğer FPDF bu satırda milimetrik genişlik hatası verirse çökmesini engelle
+                try:
+                    pdf.multi_cell(0, 6, guvenli_metin)
+                except Exception:
+                    try:
+                        # Eğer çok uzun geldiyse zorla kısaltıp bas
+                        pdf.multi_cell(0, 6, guvenli_metin[:40] + "...")
+                    except:
+                        pass # Eğer hala hata veriyorsa satırı atla, ancak PDF'i ASLA çökertme
+                        
     return bytes(pdf.output())
 
 # Sayfa İçi Akıllı Kaydırma
