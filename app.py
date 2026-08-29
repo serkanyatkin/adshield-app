@@ -43,23 +43,19 @@ def eklenti_verilerini_getir():
 def create_docx(vaka_listesi):
     doc = docx.Document()
     
-    # Varsayılan font ayarlarını daha kurumsal yapalım
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Calibri'
     font.size = Pt(11)
 
     for idx, veri in enumerate(vaka_listesi, 1):
-        # Vaka Ana Başlığı
         doc.add_heading(f'Vaka Tespit Raporu #{idx}', level=1)
         
-        # Link Alanı (Tıklanabilir ve belirgin)
         if veri.get("url"): 
             p_url = doc.add_paragraph()
             p_url.add_run("Kaynak Bağlantı: ").bold = True
             p_url.add_run(veri['url'])
             
-        # Görsel Alanı (Boyutu optimize edildi)
         if veri.get("gorsel"):
             try:
                 img_io = io.BytesIO()
@@ -71,19 +67,16 @@ def create_docx(vaka_listesi):
                 
         rapor_metni = veri.get("rapor", "Rapor oluşturulamadı.")
         
-        # --- MARKDOWN AYRIŞTIRICI (PARSER) ---
         for line in rapor_metni.split('\n'):
             line = line.strip()
             if not line:
                 continue
             
-            # Ayıraç Çizgileri
             if line.startswith('---'):
                 p = doc.add_paragraph()
                 p.add_run('_' * 50)
                 continue
             
-            # Başlıkları Temizle ve Word Başlığına (Heading) Çevir
             if line.startswith('### '):
                 doc.add_heading(line[4:].replace('**', ''), level=3)
                 continue
@@ -94,7 +87,6 @@ def create_docx(vaka_listesi):
                 doc.add_heading(line[2:].replace('**', ''), level=1)
                 continue
             
-            # Madde İmleri (Bullet Points) Algılayıcı
             if line.startswith('* '):
                 p = doc.add_paragraph(style='List Bullet')
                 line_content = line[2:]
@@ -105,16 +97,13 @@ def create_docx(vaka_listesi):
                 p = doc.add_paragraph()
                 line_content = line
                 
-            # Kalın (Bold) Metinleri Ayır ve Word Formatına Çevir
             parts = line_content.split('**')
             for i, part in enumerate(parts):
                 if not part: continue
                 run = p.add_run(part)
-                # Çift yıldızların arasındaki metinler kalın (bold) yapılır
                 if i % 2 != 0:
                     run.bold = True
                     
-        # Her yeni raporda yeni sayfaya geç
         if idx < len(vaka_listesi): 
             doc.add_page_break()
             
@@ -151,14 +140,15 @@ st.markdown("""
 
 try:
     api_key = st.secrets.get("GEMINI_API_KEY", None)
-    serpapi_key = st.secrets.get("SERPAPI_API_KEY", None)
+    serpapi_key = st.secrets.get("SERPAPI_API_KEY", "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9")
 except:
-    api_key, serpapi_key = None, None
+    api_key = None
+    serpapi_key = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
     st.header("Sistem Ayarları")
     api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
-    serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key or "", type="password")
+    serpapi_key = st.text_input("SerpApi Key:", value=serpapi_key, type="password")
 
 TARGET_MODEL = "gemini-3.6-flash"
 
