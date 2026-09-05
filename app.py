@@ -99,18 +99,18 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Gelişmiş Hukuki Mütalaa & Risk Denetim Sistemi</div></div>
-    <div class="firm-badge">Yeni Nesil Model Avcısı Aktif</div>
+    <div class="firm-badge">Sınırsız Pro Motoru Aktif</div>
 </div>
 """, unsafe_allow_html=True)
 
-api_key = st.secrets.get("GEMINI_API_KEY", "")
+SABIT_GEMINI_KEY = "AQ.Ab8RN6JFqapI0MHEsOtNuXt8Ag_3bQEXQ4Qiw0aUHAjHhjxXbg"
 SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
     st.header("Sistem Ayarları")
-    api_key_input = st.text_input("Gemini API Key:", value=api_key, type="password")
+    api_key_input = st.text_input("Gemini API Key:", value=SABIT_GEMINI_KEY, type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
-    api_key = api_key_input if api_key_input else api_key
+    api_key = api_key_input if api_key_input else SABIT_GEMINI_KEY
 
 def get_master_prompt(sektor, mecra, metin=""):
     ek_metin = f"\nReklam Metni/İddia: {metin}\n" if metin else ""
@@ -136,7 +136,6 @@ def ai_istek_at(prompt, gorsel, is_stream=False):
     except Exception as e:
         raise Exception(f"API anahtarınız Google sunucuları tarafından reddedildi. Detay: {str(e)}")
 
-    # Yeni nesil (2026) modelleri önceliklendir
     hedef_modeller = [
         "gemini-pro-latest", 
         "gemini-3.1-pro-preview", 
@@ -152,13 +151,13 @@ def ai_istek_at(prompt, gorsel, is_stream=False):
             break
             
     if not secilen_model:
-        # Bulamazsa listedeki ilk müsait modele geç
         secilen_model = izin_verilenler[0] if izin_verilenler else None
 
     if not secilen_model:
         raise Exception("API anahtarınızın görsel işleme yetkisi yok.")
 
     model = genai.GenerativeModel(secilen_model)
+    # Ücretli sürümde olduğumuz için bekleme (sleep) mekanizması kaldırıldı
     if is_stream:
         return model.generate_content([prompt, gorsel], stream=False, generation_config={"temperature": 0.3})
     else:
@@ -166,34 +165,24 @@ def ai_istek_at(prompt, gorsel, is_stream=False):
 
 def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin=""):
     prompt = get_master_prompt(sektor, mecra, metin)
-    for attempt in range(3):
-        try:
-            response = ai_istek_at(prompt, gorsel, is_stream=True)
-            if response and response.text:
-                words = response.text.split(' ')
-                for i in range(0, len(words), 6):
-                    yield ' '.join(words[i:i+6]) + ' '
-                    time.sleep(0.04)
-                return
-        except Exception as e:
-            if "429" in str(e) or "Quota" in str(e):
-                yield f"\n\n> ⏳ API Kotası Bekleniyor ({35 * (attempt+1)} sn)...\n\n"
-                time.sleep(35 * (attempt + 1))
-                continue
-            yield f"\nSistem Hatası: {str(e)}"
+    try:
+        response = ai_istek_at(prompt, gorsel, is_stream=True)
+        if response and response.text:
+            words = response.text.split(' ')
+            for i in range(0, len(words), 6):
+                yield ' '.join(words[i:i+6]) + ' '
+                time.sleep(0.02)
             return
+    except Exception as e:
+        yield f"\nSistem Hatası: {str(e)}"
+        return
 
 def analiz_et_tekil(gorsel, url, sektor, mecra):
     prompt = f"Bağlantı: {url} \n\n{get_master_prompt(sektor, mecra)}"
-    for deneme in range(3):
-        try:
-            return ai_istek_at(prompt, gorsel, is_stream=False)
-        except Exception as e:
-            if "429" in str(e) or "Quota" in str(e):
-                time.sleep(35 * (deneme + 1)) 
-                continue
-            return f"Hata oluştu: {str(e)}"
-    return "Analiz tamamlanamadı: API limitleri aşıldı."
+    try:
+        return ai_istek_at(prompt, gorsel, is_stream=False)
+    except Exception as e:
+        return f"Hata oluştu: {str(e)}"
 
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
@@ -271,21 +260,17 @@ if not is_radar:
                 reklam_url = st.text_input("Web Sayfası / Ürün Linki", value=st.session_state.get("eklenti_url", ""))
                 reklam_metni = st.text_area("Reklam Metni / Ticari İddialar", height=90)
                 
-                if st.button("Tekil Analizi Başlat (Pro Mod)", type="primary"):
+                if st.button("Tekil Analizi Başlat (Sınırsız Pro Mod)", type="primary"):
                     st.session_state.rapor_sonucu = None
             
             if st.session_state.vaka_havuzu:
                 st.write(f"**Havuz:** {len(st.session_state.vaka_havuzu)} vaka")
                 s_sektor = st.selectbox("Toplu Sektör", ["Kozmetik", "Takviye Edici Gıda"])
                 s_mecra = st.selectbox("Toplu Mecra", ["İnternet", "TV"])
-                if st.button("Toplu Analizi Başlat (Pro Mod)", type="primary"):
+                if st.button("Toplu Analizi Başlat (Sınırsız Pro Mod)", type="primary"):
                     my_bar = st.progress(0)
                     status = st.empty()
                     for i, vaka in enumerate(st.session_state.vaka_havuzu):
-                        if i > 0:
-                            for sec in range(35, 0, -1):
-                                status.warning(f"{sec} sn bekleniyor...")
-                                time.sleep(1)
                         status.info(f"Vaka #{i+1} inceleniyor...")
                         vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"], s_sektor, s_mecra)
                         my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu))
