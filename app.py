@@ -99,7 +99,7 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Gelişmiş Hukuki Mütalaa & Risk Denetim Sistemi</div></div>
-    <div class="firm-badge">Dinamik Model Avcısı Aktif</div>
+    <div class="firm-badge">Akıllı Model Tarayıcı Aktif</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -130,22 +130,29 @@ ZORUNLU ANALİZ ADIMLARI:
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    modeller = ["gemini-1.5-pro-latest", "gemini-1.5-flash-latest", "gemini-1.5-pro", "gemini-1.5-flash"]
-    son_hata = ""
     
-    for model_adi in modeller:
-        try:
-            model = genai.GenerativeModel(model_adi)
-            if is_stream:
-                return model.generate_content([prompt, gorsel], stream=False, generation_config={"temperature": 0.3})
-            else:
-                return model.generate_content([prompt, gorsel], generation_config={"temperature": 0.3}).text
-        except Exception as e:
-            son_hata = str(e)
-            if "404" in son_hata or "not found" in son_hata.lower():
-                continue
-            raise e
-    raise Exception(f"API anahtarınız hiçbir 1.5 modelini desteklemiyor. Hata: {son_hata}")
+    # API Anahtarının yetkisi olan modelleri dinamik olarak çek
+    try:
+        izin_verilenler = [m.name.replace("models/", "") for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
+    except Exception as e:
+        raise Exception(f"API anahtarınız Google sunucuları tarafından reddedildi. Anahtar geçersiz veya silinmiş olabilir. Detay: {str(e)}")
+
+    hedef_modeller = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest", "gemini-pro-vision"]
+    secilen_model = None
+    
+    for hedef in hedef_modeller:
+        if hedef in izin_verilenler:
+            secilen_model = hedef
+            break
+            
+    if not secilen_model:
+        raise Exception(f"API anahtarınızın görsel işleme yetkisi yok. Hesabınıza tanımlı modeller: {izin_verilenler}")
+
+    model = genai.GenerativeModel(secilen_model)
+    if is_stream:
+        return model.generate_content([prompt, gorsel], stream=False, generation_config={"temperature": 0.3})
+    else:
+        return model.generate_content([prompt, gorsel], generation_config={"temperature": 0.3}).text
 
 def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin=""):
     prompt = get_master_prompt(sektor, mecra, metin)
