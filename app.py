@@ -64,7 +64,6 @@ def create_docx(vaka_listesi):
             line = line.strip()
             if not line: continue
             
-            # Dilekçe başlıklarını ortalama
             if line in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]:
                 p = doc.add_paragraph()
                 p.alignment = WD_ALIGN_PARAGRAPH.CENTER
@@ -112,18 +111,20 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
-    <div class="firm-badge">Özel Dilekçe Motoru Aktif (3.1 Pro)</div>
+    <div class="firm-badge">Tam Korumalı Dilekçe Motoru Aktif</div>
 </div>
 """, unsafe_allow_html=True)
 
+# GÜVENLİK GÜNCELLEMESİ: Değişken isimleri kasadaki (secrets) isimlerle birebir eşleştirildi.
 api_key = st.secrets.get("GEMINI_API_KEY", "")
-SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
+SABIT_SERP_KEY = st.secrets.get("SERPAPI_API_KEY", "")
 
 with st.sidebar:
     st.header("Sistem Ayarları")
     api_key_input = st.text_input("Gemini API Key:", value=api_key, type="password")
-    serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
+    serpapi_key_input = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
     api_key = api_key_input if api_key_input else api_key
+    SABIT_SERP_KEY = serpapi_key_input if serpapi_key_input else SABIT_SERP_KEY
 
 def resize_for_api(image, max_size=1024):
     img = image.copy()
@@ -145,6 +146,7 @@ Aşağıdaki spesifik "Haksız Rekabet" noktalarını gözden kaçırma:
 2. Ürün İsmi İhlalleri: "Ato Cure" gibi isimler bile tek başına tedavi algısı yaratabilir.
 3. Kozmetik Sınırı: Tedavi, onarım, zayıflama (lipoliz) iddiaları kozmetik sınırını aşar. Bebek ürünlerinde tolerans sıfırdır.
 4. Gizli Reklam: #Reklam veya #İşbirliği ibareleri zeminle zıt (kontrast) renkte değilse veya en alta saklanmışsa ihlaldir.
+5. Veri Manipülasyonu: "1 numara" veya "%83" gibi istatistiklerin dönemsel, kategorik ve ispat eksikliğini yakala.
 
 --- BÖLÜM 2: REKLAM KURULU ŞİKAYET DİLEKÇESİ ---
 Yukarıdaki tespitlerini aşağıdaki şablona BİREBİR SADIK KALARAK, tamamen resmî ve agresif bir hukuk diliyle doldur:
@@ -291,7 +293,6 @@ if not is_radar:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">2. Mütalaa ve Şikayet Dilekçesi Çıktıları</div>', unsafe_allow_html=True)
             
-            # TEKİL ANALİZ ÇIKTISI
             if st.session_state.eklenti_img and st.session_state.rapor_sonucu is None and reklam_url is not None:
                 rapor_alani = st.empty()
                 tam_rapor = ""
@@ -304,13 +305,11 @@ if not is_radar:
             elif st.session_state.rapor_sonucu:
                 st.markdown(st.session_state.rapor_sonucu)
                 
-            # TEKİL ANALİZ İÇİN WORD İNDİRME BUTONU
             if st.session_state.rapor_sonucu and st.session_state.eklenti_img:
                 tekil_vaka = [{"url": reklam_url, "gorsel": st.session_state.eklenti_img, "rapor": st.session_state.rapor_sonucu}]
                 word_bytes_tekil = create_docx(tekil_vaka)
                 st.download_button("⬇️ Analizi ve Dilekçeyi İndir (DOCX)", word_bytes_tekil, "adshield_dilekce.docx", use_container_width=True)
 
-            # TOPLU ANALİZ ÇIKTISI
             if st.session_state.vaka_havuzu:
                 st.divider()
                 st.markdown("**Toplu Denetim Dosyaları**")
