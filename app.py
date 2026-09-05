@@ -4,6 +4,7 @@ import google.generativeai as genai
 from PIL import Image
 import docx
 from docx.shared import Inches, Pt
+import os
 import requests
 import io
 import urllib.parse
@@ -39,6 +40,7 @@ def eklenti_verilerini_getir():
 
 def create_docx(vaka_listesi):
     doc = docx.Document()
+    
     style = doc.styles['Normal']
     font = style.font
     font.name = 'Calibri'
@@ -58,35 +60,50 @@ def create_docx(vaka_listesi):
                 veri["gorsel"].save(img_io, format="PNG")
                 img_io.seek(0)
                 doc.add_picture(img_io, width=Inches(5.0))
-            except: pass
+            except:
+                pass
                 
         rapor_metni = veri.get("rapor", "Rapor oluşturulamadı.")
+        
         for line in rapor_metni.split('\n'):
             line = line.strip()
-            if not line: continue
+            if not line:
+                continue
+            
             if line.startswith('---'):
                 p = doc.add_paragraph()
                 p.add_run('_' * 50)
                 continue
-            if line.startswith('### '): doc.add_heading(line[4:].replace('**', ''), level=3)
-            elif line.startswith('## '): doc.add_heading(line[3:].replace('**', ''), level=2)
-            elif line.startswith('# '): doc.add_heading(line[2:].replace('**', ''), level=1)
-            elif line.startswith('* ') or line.startswith('- '):
+            
+            if line.startswith('### '):
+                doc.add_heading(line[4:].replace('**', ''), level=3)
+                continue
+            elif line.startswith('## '):
+                doc.add_heading(line[3:].replace('**', ''), level=2)
+                continue
+            elif line.startswith('# '):
+                doc.add_heading(line[2:].replace('**', ''), level=1)
+                continue
+            
+            if line.startswith('* '):
                 p = doc.add_paragraph(style='List Bullet')
                 line_content = line[2:]
-                parts = line_content.split('**')
-                for i, part in enumerate(parts):
-                    if not part: continue
-                    run = p.add_run(part)
-                    if i % 2 != 0: run.bold = True
+            elif line.startswith('- '):
+                p = doc.add_paragraph(style='List Bullet')
+                line_content = line[2:]
             else:
                 p = doc.add_paragraph()
-                parts = line.split('**')
-                for i, part in enumerate(parts):
-                    if not part: continue
-                    run = p.add_run(part)
-                    if i % 2 != 0: run.bold = True
-        if idx < len(vaka_listesi): doc.add_page_break()
+                line_content = line
+                
+            parts = line_content.split('**')
+            for i, part in enumerate(parts):
+                if not part: continue
+                run = p.add_run(part)
+                if i % 2 != 0:
+                    run.bold = True
+                    
+        if idx < len(vaka_listesi): 
+            doc.add_page_break()
             
     docx_io = io.BytesIO()
     doc.save(docx_io)
@@ -101,6 +118,12 @@ st.markdown("""
     .firm-title { font-family: 'Cinzel', serif; font-size: 19px; letter-spacing: 1.5px; font-weight: 700; }
     .firm-subtitle { font-size: 11px; letter-spacing: 1px; color: #DCE4EC; margin-top: 2px; }
     .firm-badge { background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); color: #ffffff; font-size: 11px; font-weight: 600; padding: 5px 12px; border-radius: 4px; }
+    .mode-header-title { text-align: center; font-family: 'Cinzel', serif; font-size: 13.5px; letter-spacing: 1.5px; color: #2C3848; font-weight: 700; margin-bottom: 10px; text-transform: uppercase; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] { display: flex; justify-content: center; gap: 14px; width: 100%; margin-bottom: 10px; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label { flex: 1; background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 6px; padding: 12px 18px; cursor: pointer; text-align: center; display: flex; align-items: center; justify-content: center; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child { display: none !important; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover { border-color: #5D728B; background: #F8FAFC; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) { border-color: #5D728B !important; background-color: #F1F5F9 !important; box-shadow: 0 0 0 1px #5D728B, 0 3px 8px rgba(93, 114, 139, 0.12) !important; font-weight: 600 !important; color: #1E293B !important; }
     .section-heading { font-family: 'Cinzel', serif; font-size: 13.5px; letter-spacing: 1px; color: #2C3848; font-weight: 700; margin-bottom: 12px; border-bottom: 2px solid #E2E8F0; padding-bottom: 5px; }
 </style>
 <div class="firm-header" lang="tr">
@@ -109,20 +132,32 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
+try:
+    api_key = st.secrets.get("GEMINI_API_KEY", None)
+except:
+    api_key = None
+
 SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
     st.header("Sistem Ayarları")
-    api_key = st.text_input("Gemini API Key:", value=st.secrets.get("GEMINI_API_KEY", ""), type="password")
+    api_key = st.text_input("Gemini API Key:", value=api_key or "", type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
 
-if not serpapi_key: serpapi_key = SABIT_SERP_KEY
+if not serpapi_key:
+    serpapi_key = SABIT_SERP_KEY
 
-# ZEKASI YÜKSELTİLMİŞ MODEL
-TARGET_MODEL = "gemini-1.5-pro"
+# ZEKASI YÜKSELTİLMİŞ MODEL VE DOĞRU API İSMİ
+TARGET_MODEL = "gemini-1.5-pro-latest"
 
-# YENİ HUKUKİ MÜTALAA MİMARİSİ (PROMPT)
-MASTER_PROMPT = """SEN KATKISI DEĞİŞTİRİLEMEZ BİR HAKSIZ REKABET AVUKATI VE REKLAM KURULU BAŞDENETÇİSİSİN.
+def get_working_model():
+    genai.configure(api_key=api_key)
+    return genai.GenerativeModel(model_name=TARGET_MODEL)
+
+def get_master_prompt(sektor, mecra):
+    return f"""SEN KATKISI DEĞİŞTİRİLEMEZ BİR HAKSIZ REKABET AVUKATI VE REKLAM KURULU BAŞDENETÇİSİSİN.
+Sektör: {sektor} | Mecra: {mecra}
+
 "Genel olarak incelendiğinde", "hedef kitleye uygundur", "tasarım başarılıdır" gibi pazarlama ağzı ifadeleri KESİNLİKLE KULLANMA. Doğrudan hukuki tespite gir.
 
 ZORUNLU ANALİZ ADIMLARI (Bu yapıya birebir uy):
@@ -137,16 +172,15 @@ ZORUNLU ANALİZ ADIMLARI (Bu yapıya birebir uy):
 ### 3. Mevzuat ve İçtihat Altlaması (Risk Kararı)
 6502 Sayılı Kanun, Ticari Reklam Yönetmeliği ve TİTCK kılavuzlarını baz alarak net bir ihlal kararı ver. "Şu madde ihlal edilmiştir, idari para cezası riski yüksektir" şeklinde kesin bir mütalaa yaz."""
 
-def get_working_model():
-    genai.configure(api_key=api_key)
-    return genai.GenerativeModel(model_name=TARGET_MODEL)
-
-def generate_multi_role_synthesis_stream(contents):
+def generate_multi_role_synthesis_stream(contents, sektor, mecra):
     genai.configure(api_key=api_key)
     model = get_working_model()
+    prompt = get_master_prompt(sektor, mecra)
+    
     for attempt in range(3):
         try:
-            response = model.generate_content([MASTER_PROMPT] + contents, stream=False)
+            # Temperature'ı biraz artırdık ki yaratıcılık ve analiz derinliği artsın
+            response = model.generate_content([prompt] + contents, stream=False, generation_config={"temperature": 0.3})
             if response and response.text:
                 words = response.text.split(' ')
                 for i in range(0, len(words), 6):
@@ -161,14 +195,13 @@ def generate_multi_role_synthesis_stream(contents):
             yield f"\nSentezleme hatası: {str(e)}"
             return
 
-def analiz_et_tekil(gorsel, url):
+def analiz_et_tekil(gorsel, url, sektor, mecra):
     genai.configure(api_key=api_key)
     model = get_working_model()
-    prompt = f"Aşağıdaki bağlantıda yer alan reklamı ({url}) incele. \n\n{MASTER_PROMPT}"
+    prompt = f"Aşağıdaki bağlantıda yer alan reklamı ({url}) incele. \n\n{get_master_prompt(sektor, mecra)}"
     
     for deneme in range(3):
         try:
-            # 1.5 Pro modelinde yaratıcılığı (temperature) biraz açıyoruz ki farklı kararlar sentezleyebilsin.
             res = model.generate_content([prompt, gorsel], generation_config={"temperature": 0.3})
             return res.text
         except Exception as e:
@@ -183,124 +216,176 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
     try:
         response = requests.get(url, timeout=20)
         data = response.json()
-        if "error" in data: return kategori, [{"baslik": "Sonuç Bulunamadı", "url": "#", "snippet": data['error']}]
+        if "error" in data: return kategori, [{"baslik": "Sonuç Bulunamadı / Engellendi", "url": "#", "snippet": data['error']}]
         link_havuzu = []
         for result in data.get("organic_results", []):
             link = result.get("link", "")
-            if not link.startswith("http"): continue
-            link_havuzu.append({"baslik": result.get("title", ""), "url": link, "snippet": result.get("snippet", "")})
+            title = result.get("title", "Başlık Belirtilmemiş")
+            snippet = result.get("snippet", "")
+            url_lower = link.lower()
+            yasakli = ["/giris", "/hesabim", "/sepetim", "auth", "login", "/sr?q=", "/sr", "/ara?q", "kategori", "/magaza/", "tum-urunler", "/search", "/arama"]
+            if not link.startswith("http") or any(y in url_lower for y in yasakli): continue
+            link_havuzu.append({"baslik": title, "url": link, "snippet": snippet})
+        if not link_havuzu:
+            return kategori, [{"baslik": "Bu kategoride uygun sonuç bulunamadı.", "url": "#", "snippet": ""}]
         return kategori, link_havuzu
     except Exception as e: 
         return kategori, [{"baslik": "⚠️ HATA", "url": "#", "snippet": str(e)}]
 
-def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
+def gelismis_coklu_hedef_taramasi(urun_adi, marka_domain, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
     queries = {
         "📸 Instagram": f'site:instagram.com "{t}"',
-        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) "{t}" -inurl:sr -inurl:ara -inurl:kategori'
+        "🛒 Pazaryeri Ürünleri": f'(site:trendyol.com OR site:hepsiburada.com) "{t}" -inurl:sr -inurl:ara -inurl:kategori -inurl:magaza',
+        "📦 Diğer E-Ticaret": f'"{t}" sipariş OR satın al -inurl:arama -inurl:search -inurl:kategori'
     }
     kategorize_sonuclar = {}
     for kat, q in queries.items():
-        _, sonuclar = tekil_sorgu_at(kat, q, api_key_val)
+        kat_res, sonuclar = tekil_sorgu_at(kat, q, api_key_val)
         gorulenler = set()
         tekil_list = []
         for item in sonuclar:
             if item["url"] not in gorulenler:
                 gorulenler.add(item["url"])
                 tekil_list.append(item)
-        kategorize_sonuclar[kat] = tekil_list
+        kategorize_sonuclar[kat_res] = tekil_list
     return kategorize_sonuclar
 
-for k in ["rapor_sonucu", "eklenti_img", "vaka_havuzu"]:
-    if k not in st.session_state: st.session_state[k] = None if k != "vaka_havuzu" else []
+for k in ["rapor_sonucu", "analiz_gorselleri", "radar_link_sonuclari", "eklenti_img", "eklenti_url"]:
+    if k not in st.session_state: st.session_state[k] = None
+if "vaka_havuzu" not in st.session_state: st.session_state.vaka_havuzu = []
 
-mod_secimi = st.radio("Denetim Modu", ["Kurumsal Uyum Denetimi (Tekil/Çoklu)", "Pazar Radarı"], horizontal=True, label_visibility="collapsed")
+st.markdown('<div class="mode-header-title" lang="tr">İnceleme Modunu Seçiniz</div>', unsafe_allow_html=True)
+mod_secimi = st.radio("Denetim Modu", [
+    "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)", 
+    "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)", 
+    "360° Çoklu Satıcı ve Pazar Radarı (Hedefli Ürün Linki Tespiti)"
+], horizontal=True, label_visibility="collapsed")
+
+is_danisan = "İç Denetim" in mod_secimi
+is_radar = "360° Çoklu Satıcı" in mod_secimi
 
 sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
 
-if "Uyum" in mod_secimi:
+if not is_radar:
     with sol_kolon:
         with st.container(border=True):
-            st.markdown(f'<div class="section-heading" lang="tr">1. Veri Yükleme & Kuyruk</div>', unsafe_allow_html=True)
-            col1, col2 = st.columns(2)
-            with col1:
-                if st.button("📥 Son Görüntüyü Al (Tekil)"):
+            st.markdown(f'<div class="section-heading" lang="tr">1. Parametreler & Veri Yükleme</div>', unsafe_allow_html=True)
+            if st.button("📥 Eklentiden Son Görüntüyü Al (Tekil İşlem)", use_container_width=True):
+                with st.spinner("Kuyruktan veri alınıyor..."):
                     gelen_liste = eklenti_verilerini_getir()
                     if gelen_liste:
                         son_item = gelen_liste[-1]
-                        b64_img = son_item.get('image', '').split(',')[-1].strip()
+                        st.session_state.eklenti_url = son_item.get('url', '')
+                        b64_img = son_item.get('image', '').split(',')[1] if ',' in son_item.get('image', '') else son_item.get('image', '')
+                        b64_img = b64_img.strip().replace('\n', '').replace('\r', '')
                         b64_img += '=' * ((4 - len(b64_img) % 4) % 4)
                         st.session_state.eklenti_img = Image.open(io.BytesIO(base64.b64decode(b64_img))).convert("RGB")
                         st.rerun()
-            with col2:
-                if st.button("📥 Tüm Kuyruğu Al (Toplu)"):
-                    gelen_liste = eklenti_verilerini_getir()
-                    if gelen_liste:
-                        for item in gelen_liste:
-                            b64 = item.get('image', '').split(',')[-1].strip()
-                            b64 += '=' * ((4 - len(b64) % 4) % 4)
-                            st.session_state.vaka_havuzu.append({"url": item.get('url', ''), "gorsel": Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"), "rapor": None})
-                        st.rerun()
-
-            if st.session_state.eklenti_img:
-                st.image(st.session_state.eklenti_img, use_container_width=True)
-                if st.button("Tekil Analizi Başlat", type="primary"):
-                    st.session_state.rapor_sonucu = None
             
-            if st.session_state.vaka_havuzu:
-                st.write(f"**Havuz:** {len(st.session_state.vaka_havuzu)} vaka")
-                if st.button("Toplu Analizi Başlat (Pro Mod)", type="primary"):
-                    my_bar = st.progress(0, text="Pro Model çalışıyor...")
-                    status = st.empty()
-                    for i, vaka in enumerate(st.session_state.vaka_havuzu):
-                        if i > 0:
-                            for sec in range(35, 0, -1):
-                                status.warning(f"1.5 Pro kotası için {sec} sn bekleniyor...")
-                                time.sleep(1)
-                        status.info(f"Vaka #{i+1} derin analize tabi tutuluyor...")
-                        vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"])
-                        my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu))
-                    status.empty()
+            if st.session_state.eklenti_img:
+                st.image(st.session_state.eklenti_img, caption="Analiz Edilecek Görsel", use_container_width=True)
+                if st.button("🧹 Görüntüyü Temizle"):
+                    st.session_state.eklenti_img, st.session_state.eklenti_url = None, ""
                     st.rerun()
+                st.divider()
+            
+            sektor = st.selectbox("Faaliyet Sektörü", ["Kozmetik & Kişisel Bakım / Anne-Bebek", "Takviye Edici Gıda & Sağlık", "E-Ticaret", "Diğer"])
+            mecra = st.selectbox("Yayınlanacak Mecra", ["İnternet / Sosyal Medya", "Satış Noktası", "Televizyon", "Açık Hava"])
+            reklam_url = st.text_input("Web Sayfası / Ürün Linki", value=st.session_state.get("eklenti_url", ""))
+            reklam_metni = st.text_area("Reklam Metni / Ticari İddialar", height=90)
+            analiz_butonu = st.button("Analizi Başlat (Pro Mod)", type="primary")
 
     with sag_kolon:
         with st.container(border=True):
-            st.markdown(f'<div class="section-heading" lang="tr">2. Hukuki Mütalaa Çıktıları</div>', unsafe_allow_html=True)
-            if st.session_state.eklenti_img and not st.session_state.rapor_sonucu:
+            st.markdown(f'<div class="section-heading" lang="tr">2. Denetim Raporu & Çıktılar</div>', unsafe_allow_html=True)
+            if analiz_butonu:
+                st.session_state.analiz_gorselleri = [st.session_state.eklenti_img] if st.session_state.eklenti_img else []
+                icerik_listesi = [f"Metin: {reklam_metni}\n\n[Link]: {reklam_url}"] + st.session_state.analiz_gorselleri
                 rapor_alani = st.empty()
-                tam_rapor = ""
-                for parca in generate_multi_role_synthesis_stream([st.session_state.eklenti_img]):
-                    tam_rapor += parca
-                    rapor_alani.markdown(tam_rapor + "▌")
-                rapor_alani.markdown(tam_rapor)
-                st.session_state.rapor_sonucu = tam_rapor
-            elif st.session_state.rapor_sonucu:
-                st.markdown(st.session_state.rapor_sonucu)
-
-            if st.session_state.vaka_havuzu:
-                for idx, vaka in enumerate(st.session_state.vaka_havuzu, 1):
-                    with st.expander(f"Vaka #{idx}"):
-                        st.image(vaka["gorsel"], width=150)
-                        if vaka["rapor"]: st.markdown(vaka["rapor"])
-                        else: st.info("Bekliyor...")
-                if any(v.get("rapor") for v in st.session_state.vaka_havuzu):
-                    word_bytes = create_docx(st.session_state.vaka_havuzu)
-                    st.download_button("⬇️ Tüm Mütalaaları İndir (DOCX)", data=word_bytes, file_name="adshield_pro_rapor.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
+                try:
+                    tam_rapor = ""
+                    with st.spinner("Gemini 1.5 Pro Mütalaa Üretiyor..."):
+                        for parca in generate_multi_role_synthesis_stream(icerik_listesi, sektor, mecra):
+                            tam_rapor += parca
+                            rapor_alani.markdown(tam_rapor + "▌")
+                    rapor_alani.empty()
+                    st.session_state.rapor_sonucu = tam_rapor
+                except Exception as err: st.error(f"Sistem Hatası: {err}")
+            
+            if st.session_state.rapor_sonucu:
+                with st.container(height=450): st.markdown(st.session_state.rapor_sonucu)
 
 else:
     with sol_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">Pazar Radarı</div>', unsafe_allow_html=True)
-            radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
-            if st.button("Hedefleri Bul", type="primary"):
-                with st.spinner("Taranıyor..."):
-                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, serpapi_key)
+            st.markdown('<div class="section-heading" lang="tr">📡 Pazar Radarı</div>', unsafe_allow_html=True)
+            radar_urun = st.text_input("Marka / Ürün Anahtar Kelimesi", value="incia bebek yağı")
+            radar_tara_butonu = st.button("🚀 Hedef Linkleri Tespit Et", type="primary")
+        
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">📥 Toplu Görüntü Havuzu (Pro Sürüm)</div>', unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📥 Tüm Kuyruğu Al", use_container_width=True):
+                    gelen_liste = eklenti_verilerini_getir()
+                    if gelen_liste:
+                        for item in gelen_liste:
+                            b64 = item.get('image', '').split(',')[-1].strip().replace('\n', '').replace('\r', '')
+                            b64 += '=' * ((4 - len(b64) % 4) % 4)
+                            st.session_state.vaka_havuzu.append({"url": item.get('url', ''), "gorsel": Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"), "rapor": None})
+                        st.rerun()
+            with col2:
+                if st.button("🧹 Havuzu Temizle", use_container_width=True):
+                    st.session_state.vaka_havuzu = []
+                    st.rerun()
+
+            if st.session_state.vaka_havuzu:
+                st.write(f"**Havuzdaki Vaka Sayısı: {len(st.session_state.vaka_havuzu)}**")
+                s_sektor = st.selectbox("Toplu Analiz İçin Sektör", ["Kozmetik & Kişisel Bakım", "Takviye Edici Gıda", "E-Ticaret"])
+                s_mecra = st.selectbox("Toplu Analiz İçin Mecra", ["İnternet", "Televizyon", "Açık Hava"])
+                
+                if st.button("🚀 Tüm Havuzu Analiz Et (Pro Mod)", type="primary"):
+                    progress_text = "Vakalar Pro model ile sırayla derin analiz ediliyor..."
+                    my_bar = st.progress(0, text=progress_text)
+                    status_text = st.empty()
+                    
+                    for i, vaka in enumerate(st.session_state.vaka_havuzu):
+                        if i > 0:
+                            for sec in range(35, 0, -1):
+                                status_text.warning(f"1.5 Pro kotası korunuyor. Yeni mütalaaya {sec} saniye sonra geçilecek...")
+                                time.sleep(1)
+                        status_text.info(f"Vaka #{i+1} hukuki açıdan inceleniyor...")
+                        vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"], s_sektor, s_mecra)
+                        my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu), text=f"Tamamlanan İşlem: {i+1}/{len(st.session_state.vaka_havuzu)}")
+                                
+                    status_text.empty()
+                    st.success("Tüm mütalaalar tamamlandı!")
+                    st.rerun()
+
     with sag_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
-            if st.session_state.get("radar_link_sonuclari"):
-                sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
+            st.markdown('<div class="section-heading" lang="tr">📋 Analiz Sonuçları & Linkler</div>', unsafe_allow_html=True)
+            if radar_tara_butonu:
+                with st.spinner("Taranıyor..."):
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, "", serpapi_key)
+            
+            if st.session_state.radar_link_sonuclari:
+                alt_sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
                 for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
-                    with sekmeler[i]:
+                    with alt_sekmeler[i]:
                         for idx, item in enumerate(links, 1): st.markdown(f"**{idx}. [{item['baslik']}]({item['url']})**")
+                st.divider()
+
+            if st.session_state.vaka_havuzu:
+                st.markdown("**🔍 Toplu Denetim Raporları**")
+                for idx, vaka in enumerate(st.session_state.vaka_havuzu, 1):
+                    with st.expander(f"Vaka #{idx} - {vaka['url'][:50]}..."):
+                        st.image(vaka["gorsel"], width=200)
+                        if vaka["rapor"]: st.markdown(vaka["rapor"])
+                        else: st.info("Henüz analiz edilmedi.")
+                            
+                if any(v.get("rapor") for v in st.session_state.vaka_havuzu):
+                    word_bytes = create_docx(st.session_state.vaka_havuzu)
+                    st.download_button("⬇️ Tüm Raporları Word (DOCX) Olarak İndir", data=word_bytes, file_name="adshield_pro_toplu_rapor.docx", mime="application/vnd.openxmlformats-officedocument.wordprocessingml.document", use_container_width=True)
