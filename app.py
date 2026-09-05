@@ -98,70 +98,54 @@ st.markdown("""
     div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) { border-color: #5D728B !important; background-color: #F1F5F9 !important; font-weight: 600 !important; color: #1E293B !important; }
 </style>
 <div class="firm-header" lang="tr">
-    <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Gelişmiş Hukuki Mütalaa & Risk Denetim Sistemi</div></div>
-    <div class="firm-badge">Sınırsız Pro Motoru Aktif</div>
+    <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
+    <div class="firm-badge">Maliyet Optimize Edilmiş 2.5 Pro</div>
 </div>
 """, unsafe_allow_html=True)
 
-SABIT_GEMINI_KEY = "AQ.Ab8RN6JFqapI0MHEsOtNuXt8Ag_3bQEXQ4Qiw0aUHAjHhjxXbg"
+api_key = st.secrets.get("GEMINI_API_KEY", "")
 SABIT_SERP_KEY = "627674c9f6d0c31b8196c2551afa690a7d03bfcd1531e38226059fc0e95b8cd9"
 
 with st.sidebar:
     st.header("Sistem Ayarları")
-    api_key_input = st.text_input("Gemini API Key:", value=SABIT_GEMINI_KEY, type="password")
+    api_key_input = st.text_input("Gemini API Key:", value=api_key, type="password")
     serpapi_key = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
-    api_key = api_key_input if api_key_input else SABIT_GEMINI_KEY
+    api_key = api_key_input if api_key_input else api_key
+
+def resize_for_api(image, max_size=1024):
+    """Maliyeti düşürmek için görseli optimize eder."""
+    img = image.copy()
+    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    return img
 
 def get_master_prompt(sektor, mecra, metin=""):
     ek_metin = f"\nReklam Metni/İddia: {metin}\n" if metin else ""
-    return f"""SEN KATKISI DEĞİŞTİRİLEMEZ BİR HAKSIZ REKABET AVUKATI VE REKLAM KURULU BAŞDENETÇİSİSİN.
+    return f"""SEN TİCARET BAKANLIĞI REKLAM KURULU BAŞDENETÇİSİ VE UZMAN BİR HAKSIZ REKABET AVUKATISIN.
 Sektör: {sektor} | Mecra: {mecra} {ek_metin}
 
-"Genel olarak incelendiğinde", "hedef kitleye uygundur" gibi pazarlama ağzı ifadeleri KESİNLİKLE KULLANMA. Doğrudan hukuki tespite gir.
+Sadece yüzeysel tespit yapma. Reklam Kurulu'nun yerleşik Karar Havuzunu ve TİTCK Kozmetik Kılavuzunu işleterek en ince ihlalleri yakala. Pazarlama ağzı KULLANMA.
 
-ZORUNLU ANALİZ ADIMLARI:
-### 1. Görsel Tespitler
-(Sadece ekranda gördüğün somut objeleri, mizanseni, punto farklılıklarını listele. Yorum yapma.)
-### 2. Çapraz Hukuki İnceleme
-**Kurumun Olası İddiası:** Görseldeki vaadin hangi tüketici zaafını veya sağlık beyanını ihlal ettiğini agresif bir dille yaz.
-**Markanın Olası Savunması:** İlgili ibarenin neden sadece bir "kozmetik" veya "abartılı reklam" sayılabileceğini savun.
-### 3. Risk Kararı
-İlgili yönetmelikleri baz alarak net bir mütalaa yaz."""
+### 1. Şekil Şartları ve Gizli İhlaller
+(Görseli dedektif gibi incele. #Reklam ibaresi arka planla zıt (kontrast) renkte mi? Küçük puntoyla veya en alta saklanmış mı? Sosyal Medya Kılavuzu "ilk bakışta görülme" kuralı ihlal ediliyor mu?)
+
+### 2. İddia ve ÜBD (Ürün Bilgi Dosyası) Analizi
+(İfade edilen vaat (örn: tedavi, onarım, toparlanma) kozmetik sınırını aşıp sağlık beyanına giriyor mu? Özellikle bebek/anne ürünlerinde Kurul'un "sıfır tolerans" ilkesini gözet. Marka bu iddiayı klinik testle ispatlayabilir mi?)
+
+### 3. Taarruz Stratejisi (Rakip Analizi)
+(Yönetmelik Madde 7 "Bütüncül Algı" kuralını işlet. Tüketici mizansen ve vaatlerle bir bütün olarak nasıl aldatılıyor? Markanın olası "bu sadece puffery (mübalağa)" savunmasını hukuki argümanla çürüt.)
+
+### 4. Şikayet / Aksiyon Taslağı
+(Kurul'a veya CİMER'e sunulmaya hazır, ihlal edilen mevzuat maddelerini numarasıyla belirten, agresif ve net bir şikayet mütalaası yaz.)"""
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-2.5-pro")
+    optimize_gorsel = resize_for_api(gorsel)
     
-    try:
-        izin_verilenler = [m.name.replace("models/", "") for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
-    except Exception as e:
-        raise Exception(f"API anahtarınız Google sunucuları tarafından reddedildi. Detay: {str(e)}")
-
-    hedef_modeller = [
-        "gemini-pro-latest", 
-        "gemini-3.1-pro-preview", 
-        "gemini-2.5-pro", 
-        "gemini-3.6-flash", 
-        "gemini-flash-latest"
-    ]
-    
-    secilen_model = None
-    for hedef in hedef_modeller:
-        if hedef in izin_verilenler:
-            secilen_model = hedef
-            break
-            
-    if not secilen_model:
-        secilen_model = izin_verilenler[0] if izin_verilenler else None
-
-    if not secilen_model:
-        raise Exception("API anahtarınızın görsel işleme yetkisi yok.")
-
-    model = genai.GenerativeModel(secilen_model)
-    # Ücretli sürümde olduğumuz için bekleme (sleep) mekanizması kaldırıldı
     if is_stream:
-        return model.generate_content([prompt, gorsel], stream=False, generation_config={"temperature": 0.3})
+        return model.generate_content([prompt, optimize_gorsel], stream=False, generation_config={"temperature": 0.2})
     else:
-        return model.generate_content([prompt, gorsel], generation_config={"temperature": 0.3}).text
+        return model.generate_content([prompt, optimize_gorsel], generation_config={"temperature": 0.2}).text
 
 def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin=""):
     prompt = get_master_prompt(sektor, mecra, metin)
@@ -260,14 +244,14 @@ if not is_radar:
                 reklam_url = st.text_input("Web Sayfası / Ürün Linki", value=st.session_state.get("eklenti_url", ""))
                 reklam_metni = st.text_area("Reklam Metni / Ticari İddialar", height=90)
                 
-                if st.button("Tekil Analizi Başlat (Sınırsız Pro Mod)", type="primary"):
+                if st.button("Taarruz Analizini Başlat", type="primary"):
                     st.session_state.rapor_sonucu = None
             
             if st.session_state.vaka_havuzu:
                 st.write(f"**Havuz:** {len(st.session_state.vaka_havuzu)} vaka")
                 s_sektor = st.selectbox("Toplu Sektör", ["Kozmetik", "Takviye Edici Gıda"])
                 s_mecra = st.selectbox("Toplu Mecra", ["İnternet", "TV"])
-                if st.button("Toplu Analizi Başlat (Sınırsız Pro Mod)", type="primary"):
+                if st.button("Toplu Analizi Başlat", type="primary"):
                     my_bar = st.progress(0)
                     status = st.empty()
                     for i, vaka in enumerate(st.session_state.vaka_havuzu):
