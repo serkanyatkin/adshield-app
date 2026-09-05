@@ -99,7 +99,7 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Gelişmiş Hukuki Mütalaa & Risk Denetim Sistemi</div></div>
-    <div class="firm-badge">Akıllı Model Tarayıcı Aktif</div>
+    <div class="firm-badge">Yeni Nesil Model Avcısı Aktif</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -131,22 +131,32 @@ ZORUNLU ANALİZ ADIMLARI:
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
     
-    # API Anahtarının yetkisi olan modelleri dinamik olarak çek
     try:
         izin_verilenler = [m.name.replace("models/", "") for m in genai.list_models() if 'generateContent' in m.supported_generation_methods]
     except Exception as e:
-        raise Exception(f"API anahtarınız Google sunucuları tarafından reddedildi. Anahtar geçersiz veya silinmiş olabilir. Detay: {str(e)}")
+        raise Exception(f"API anahtarınız Google sunucuları tarafından reddedildi. Detay: {str(e)}")
 
-    hedef_modeller = ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-1.5-pro-latest", "gemini-1.5-flash-latest", "gemini-pro-vision"]
-    secilen_model = None
+    # Yeni nesil (2026) modelleri önceliklendir
+    hedef_modeller = [
+        "gemini-pro-latest", 
+        "gemini-3.1-pro-preview", 
+        "gemini-2.5-pro", 
+        "gemini-3.6-flash", 
+        "gemini-flash-latest"
+    ]
     
+    secilen_model = None
     for hedef in hedef_modeller:
         if hedef in izin_verilenler:
             secilen_model = hedef
             break
             
     if not secilen_model:
-        raise Exception(f"API anahtarınızın görsel işleme yetkisi yok. Hesabınıza tanımlı modeller: {izin_verilenler}")
+        # Bulamazsa listedeki ilk müsait modele geç
+        secilen_model = izin_verilenler[0] if izin_verilenler else None
+
+    if not secilen_model:
+        raise Exception("API anahtarınızın görsel işleme yetkisi yok.")
 
     model = genai.GenerativeModel(secilen_model)
     if is_stream:
