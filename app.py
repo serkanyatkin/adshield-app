@@ -36,59 +36,50 @@ def eklenti_verilerini_getir():
     except: pass
     return []
 
-def create_docx(vaka_listesi):
+def create_single_docx(metin, gorsel=None, url="", is_dilekce=False):
     doc = docx.Document()
     style = doc.styles['Normal']
     style.font.name = 'Calibri'
     style.font.size = Pt(11)
 
-    for idx, veri in enumerate(vaka_listesi, 1):
-        doc.add_heading(f'AdShield Denetim Dosyası #{idx}', level=1)
+    if url and not is_dilekce:
+        p_url = doc.add_paragraph()
+        p_url.add_run("İhlal Kaynağı (URL): ").bold = True
+        p_url.add_run(url)
         
-        if veri.get("url"): 
-            p_url = doc.add_paragraph()
-            p_url.add_run("İhlal Kaynağı (URL): ").bold = True
-            p_url.add_run(veri['url'])
-            
-        if veri.get("gorsel"):
-            try:
-                img_io = io.BytesIO()
-                veri["gorsel"].save(img_io, format="PNG")
-                img_io.seek(0)
-                doc.add_picture(img_io, width=Inches(4.5))
-            except: pass
+    if gorsel and not is_dilekce:
+        try:
+            img_io = io.BytesIO()
+            gorsel.save(img_io, format="PNG")
+            img_io.seek(0)
+            doc.add_picture(img_io, width=Inches(4.5))
+        except: pass
+
+    for line in metin.split('\n'):
+        line = line.strip()
+        if not line: continue
+        if line.startswith("--- DİLEKÇE"): continue
+
+        if is_dilekce and line in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run(line).bold = True
+            continue
+
+        if line.startswith('### '): doc.add_heading(line[4:].replace('**', ''), level=3)
+        elif line.startswith('## '): doc.add_heading(line[3:].replace('**', ''), level=2)
+        elif line.startswith('# '): doc.add_heading(line[2:].replace('**', ''), level=1)
+        elif line.startswith('* ') or line.startswith('- '):
+            p = doc.add_paragraph(style='List Bullet')
+            parts = line[2:].split('**')
+            for i, part in enumerate(parts):
+                if part: p.add_run(part).bold = (i % 2 != 0)
+        else:
+            p = doc.add_paragraph()
+            parts = line.split('**')
+            for i, part in enumerate(parts):
+                if part: p.add_run(part).bold = (i % 2 != 0)
                 
-        rapor_metni = veri.get("rapor", "Rapor oluşturulamadı.")
-        
-        for line in rapor_metni.split('\n'):
-            line = line.strip()
-            if not line: continue
-            
-            if line in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]:
-                p = doc.add_paragraph()
-                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
-                p.add_run(line).bold = True
-                continue
-                
-            if line.startswith('---'):
-                doc.add_paragraph().add_run('_' * 50)
-                continue
-            if line.startswith('### '): doc.add_heading(line[4:].replace('**', ''), level=3)
-            elif line.startswith('## '): doc.add_heading(line[3:].replace('**', ''), level=2)
-            elif line.startswith('# '): doc.add_heading(line[2:].replace('**', ''), level=1)
-            elif line.startswith('* ') or line.startswith('- '):
-                p = doc.add_paragraph(style='List Bullet')
-                parts = line[2:].split('**')
-                for i, part in enumerate(parts):
-                    if part: p.add_run(part).bold = (i % 2 != 0)
-            else:
-                p = doc.add_paragraph()
-                parts = line.split('**')
-                for i, part in enumerate(parts):
-                    if part: p.add_run(part).bold = (i % 2 != 0)
-        
-        if idx < len(vaka_listesi): doc.add_page_break()
-            
     docx_io = io.BytesIO()
     doc.save(docx_io)
     return docx_io.getvalue()
@@ -111,11 +102,10 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
-    <div class="firm-badge">Tam Korumalı Dilekçe Motoru Aktif</div>
+    <div class="firm-badge">Tam Korumalı & Çift Çıktı Motoru Aktif</div>
 </div>
 """, unsafe_allow_html=True)
 
-# GÜVENLİK GÜNCELLEMESİ: Değişken isimleri kasadaki (secrets) isimlerle birebir eşleştirildi.
 api_key = st.secrets.get("GEMINI_API_KEY", "")
 SABIT_SERP_KEY = st.secrets.get("SERPAPI_API_KEY", "")
 
@@ -138,32 +128,35 @@ def get_master_prompt(sektor, mecra, metin="", url=""):
 Sektör: {sektor} | Mecra: {mecra} 
 {ek_url}{ek_metin}
 
-Senden İKİ BÖLÜMDEN oluşan bir çıktı istiyorum. 
+Senden YAPAY ZEKA AĞZI KULLANMADAN, resmi hukuk dilinde İKİ FARKLI METİN üretmeni istiyorum. Araya KESİNLİKLE "--- DİLEKÇE BAŞLANGICI ---" ayıracını koy.
 
---- BÖLÜM 1: HUKUKİ MÜTALAA VE RİSK ANALİZİ ---
-Aşağıdaki spesifik "Haksız Rekabet" noktalarını gözden kaçırma:
-1. "İçermez" Hilesi: Formülasyon gereği zaten olmaması gereken (örn: kremde SLS) veya yasal olan (örn: Paraben) bir maddenin "içermez" diye satılması rakipleri kötüleme ve haksız rekabettir.
-2. Ürün İsmi İhlalleri: "Ato Cure" gibi isimler bile tek başına tedavi algısı yaratabilir.
-3. Kozmetik Sınırı: Tedavi, onarım, zayıflama (lipoliz) iddiaları kozmetik sınırını aşar. Bebek ürünlerinde tolerans sıfırdır.
-4. Gizli Reklam: #Reklam veya #İşbirliği ibareleri zeminle zıt (kontrast) renkte değilse veya en alta saklanmışsa ihlaldir.
-5. Veri Manipülasyonu: "1 numara" veya "%83" gibi istatistiklerin dönemsel, kategorik ve ispat eksikliğini yakala.
+[BÖLÜM 1: MÜTALAA]
+Sadece ihlalleri hukuki dayanaklarıyla (Kozmetik Kanunu m.2, Ticari Reklam Yön. m.7 vb.) açıkla. 
+- Formülasyon gereği olmaması gereken (SLS vb.) veya yasal (Paraben) maddeler üzerinden "içermez" hilesi yapan haksız rekabetleri affetme.
+- Ürün isminde "Ato Cure" gibi kelime hileleriyle tıbbi tedavi algısı yaratılıp yaratılmadığını incele.
+- "1 numara" gibi veri manipülasyonlarını deşifre et.
 
---- BÖLÜM 2: REKLAM KURULU ŞİKAYET DİLEKÇESİ ---
-Yukarıdaki tespitlerini aşağıdaki şablona BİREBİR SADIK KALARAK, tamamen resmî ve agresif bir hukuk diliyle doldur:
+--- DİLEKÇE BAŞLANGICI ---
+(BU KISIMDAN SONRA ASLA MADDELENDİRME İŞARETİ (*) KULLANMA. NUMARALI BAŞLIK (1., 2.) KULLAN.)
 
 T.C. TİCARET BAKANLIĞI
 REKLAM KURULU BAŞKANLIĞINA
 ANKARA
 
-**ŞİKAYET EDEN:** [Boş Bırak]
-**ŞİKAYET EDİLEN:** [Tespit Ettiğin Marka/Firma]
-**ŞİKAYET KONUSU:** [İhlalin kısa özeti ve ilgili 6502 ile Ticari Reklam Yönetmeliği maddelerine atıf]
-**AÇIKLAMALAR:**
-1. [İhlal 1 ve Hukuki Dayanağı - Örn: Gizli reklam/Şekil şartı ihlali]
-2. [İhlal 2 ve Hukuki Dayanağı - Örn: Kozmetik tanımını aşan sağlık beyanı veya haksız "içermez" rekabeti]
-3. [İhlal 3 ve Hukuki Dayanağı - Örn: Bütüncül algı ile tüketici istismarı]
-*(Gerektiği kadar madde ekle)*
-**SONUÇ VE İSTEM:** Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; reklam ve bilgilendirmelerin incelenerek yayının durdurulması, yayından kaldırılması ve sorumlu şirketin idari para cezası ile cezalandırılmasını talep ederiz."""
+ŞİKAYET EDEN 		: [Boş Bırak]
+ADRES	 		: [Boş Bırak]
+ŞİKAYET EDİLEN 	: [Firma Unvanını Tahmin Et]
+ŞİKAYET KONUSU 	: Söz konusu ürünün satış sayfasında, ürün başlığında, görsel ve tanıtım metinlerinde yer alan iddialar hakkında 6502 sayılı Tüketicinin Korunması Hakkında Kanun, Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ve 5324 sayılı Kozmetik Kanunu uyarınca reklamların durdurulması ve ilgililer hakkında idari para cezası uygulanması talebidir.
+AÇIKLAMALAR :
+Şikayet edilen satıcı ve marka sahibi tarafından satışa arz edilen kozmetik ürünün tanıtım ve reklam materyalleri incelendiğinde; yürürlükteki mevzuat hükümleri, TİTCK kılavuzları ve Reklam Kurulu’nun yerleşik içtihatları çerçevesinde açıkça hukuka ve tüketici haklarına aykırılık teşkil ettiği tespit edilmiştir.
+
+1. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
+
+2. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
+
+SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayının durdurulması ya da düzeltilmesi, yayından kaldırılması ve sorumlu şirketin idari para cezası ile cezalandırılmasını talep ederiz."""
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
@@ -188,13 +181,6 @@ def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin="", url=""
     except Exception as e:
         yield f"\nSistem Hatası: {str(e)}"
         return
-
-def analiz_et_tekil(gorsel, url, sektor, mecra):
-    prompt = get_master_prompt(sektor, mecra, "", url)
-    try:
-        return ai_istek_at(prompt, gorsel, is_stream=False)
-    except Exception as e:
-        return f"Hata oluştu: {str(e)}"
 
 def tekil_sorgu_at(kategori, sorgu, api_key_val):
     url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
@@ -235,9 +221,9 @@ for k in ["rapor_sonucu", "eklenti_img", "eklenti_url", "vaka_havuzu", "radar_li
     if k not in st.session_state: st.session_state[k] = None if k != "vaka_havuzu" else []
 
 mod_secimi = st.radio("Denetim Modu", [
-    "Kurumsal Kampanya Taslağı Uyum Denetimi (İç Denetim & Revizyon Modu)",
-    "Piyasa ve Rakip Reklam İncelemesi (Haksız Rekabet & Şikayet Modu)",
-    "360° Çoklu Satıcı ve Pazar Radarı (Hedefli Ürün Linki Tespiti)"
+    "Kurumsal Kampanya Taslağı Uyum Denetimi",
+    "Piyasa ve Rakip Reklam İncelemesi",
+    "360° Çoklu Satıcı ve Pazar Radarı"
 ], horizontal=True, label_visibility="collapsed")
 
 is_radar = "360°" in mod_secimi
@@ -258,12 +244,6 @@ if not is_radar:
                         b64 = son.get('image', '').split(',')[-1].strip() + '=='
                         st.session_state.eklenti_img = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
                         st.rerun()
-            with col2:
-                if st.button("📥 Tüm Kuyruğu Al"):
-                    for item in eklenti_verilerini_getir():
-                        b64 = item.get('image', '').split(',')[-1].strip() + '=='
-                        st.session_state.vaka_havuzu.append({"url": item.get('url', ''), "gorsel": Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB"), "rapor": None})
-                    st.rerun()
 
             if st.session_state.eklenti_img:
                 st.image(st.session_state.eklenti_img, use_container_width=True)
@@ -275,23 +255,9 @@ if not is_radar:
                 if st.button("Hukuki Analizi & Dilekçeyi Başlat", type="primary"):
                     st.session_state.rapor_sonucu = None
             
-            if st.session_state.vaka_havuzu:
-                st.write(f"**Havuz:** {len(st.session_state.vaka_havuzu)} vaka")
-                s_sektor = st.selectbox("Toplu Sektör", ["Kozmetik", "Takviye Edici Gıda"])
-                s_mecra = st.selectbox("Toplu Mecra", ["İnternet", "TV"])
-                if st.button("Toplu Analizi Başlat", type="primary"):
-                    my_bar = st.progress(0)
-                    status = st.empty()
-                    for i, vaka in enumerate(st.session_state.vaka_havuzu):
-                        status.info(f"Vaka #{i+1} inceleniyor...")
-                        vaka["rapor"] = analiz_et_tekil(vaka["gorsel"], vaka["url"], s_sektor, s_mecra)
-                        my_bar.progress((i + 1) / len(st.session_state.vaka_havuzu))
-                    status.empty()
-                    st.rerun()
-
     with sag_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">2. Mütalaa ve Şikayet Dilekçesi Çıktıları</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">2. Çıktılar</div>', unsafe_allow_html=True)
             
             if st.session_state.eklenti_img and st.session_state.rapor_sonucu is None and reklam_url is not None:
                 rapor_alani = st.empty()
@@ -305,21 +271,25 @@ if not is_radar:
             elif st.session_state.rapor_sonucu:
                 st.markdown(st.session_state.rapor_sonucu)
                 
-            if st.session_state.rapor_sonucu and st.session_state.eklenti_img:
-                tekil_vaka = [{"url": reklam_url, "gorsel": st.session_state.eklenti_img, "rapor": st.session_state.rapor_sonucu}]
-                word_bytes_tekil = create_docx(tekil_vaka)
-                st.download_button("⬇️ Analizi ve Dilekçeyi İndir (DOCX)", word_bytes_tekil, "adshield_dilekce.docx", use_container_width=True)
-
-            if st.session_state.vaka_havuzu:
+            if st.session_state.rapor_sonucu:
+                # Metni İkiye Böl
+                rapor_kismi = st.session_state.rapor_sonucu
+                dilekce_kismi = ""
+                if "--- DİLEKÇE BAŞLANGICI ---" in st.session_state.rapor_sonucu:
+                    parcalar = st.session_state.rapor_sonucu.split("--- DİLEKÇE BAŞLANGICI ---")
+                    rapor_kismi = parcalar[0]
+                    if len(parcalar) > 1:
+                        dilekce_kismi = parcalar[1]
+                
                 st.divider()
-                st.markdown("**Toplu Denetim Dosyaları**")
-                for idx, vaka in enumerate(st.session_state.vaka_havuzu, 1):
-                    with st.expander(f"Vaka #{idx}"):
-                        st.image(vaka["gorsel"], width=150)
-                        if vaka["rapor"]: st.markdown(vaka["rapor"])
-                if any(v.get("rapor") for v in st.session_state.vaka_havuzu):
-                    word_bytes_toplu = create_docx(st.session_state.vaka_havuzu)
-                    st.download_button("⬇️ Tüm Dosyaları İndir (DOCX)", word_bytes_toplu, "adshield_toplu_dilekce.docx", use_container_width=True, type="primary")
+                col_indir_1, col_indir_2 = st.columns(2)
+                with col_indir_1:
+                    word_rapor = create_single_docx(rapor_kismi, gorsel=st.session_state.eklenti_img, url=reklam_url, is_dilekce=False)
+                    st.download_button("📊 Mütalaa Raporunu İndir", word_rapor, "adshield_mutalaa.docx", use_container_width=True)
+                with col_indir_2:
+                    if dilekce_kismi:
+                        word_dilekce = create_single_docx(dilekce_kismi, is_dilekce=True)
+                        st.download_button("⚖️ Şikayet Dilekçesini İndir", word_dilekce, "adshield_dilekce.docx", use_container_width=True, type="primary")
 
 else:
     with sol_kolon:
