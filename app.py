@@ -4,6 +4,7 @@ import google.generativeai as genai
 from PIL import Image
 import docx
 from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
 import requests
 import io
 import urllib.parse
@@ -42,23 +43,34 @@ def create_docx(vaka_listesi):
     style.font.size = Pt(11)
 
     for idx, veri in enumerate(vaka_listesi, 1):
-        doc.add_heading(f'Vaka Tespit Raporu #{idx}', level=1)
+        doc.add_heading(f'AdShield Denetim Dosyası #{idx}', level=1)
+        
         if veri.get("url"): 
             p_url = doc.add_paragraph()
-            p_url.add_run("Kaynak Bağlantı: ").bold = True
+            p_url.add_run("İhlal Kaynağı (URL): ").bold = True
             p_url.add_run(veri['url'])
+            
         if veri.get("gorsel"):
             try:
                 img_io = io.BytesIO()
                 veri["gorsel"].save(img_io, format="PNG")
                 img_io.seek(0)
-                doc.add_picture(img_io, width=Inches(5.0))
+                doc.add_picture(img_io, width=Inches(4.5))
             except: pass
                 
         rapor_metni = veri.get("rapor", "Rapor oluşturulamadı.")
+        
         for line in rapor_metni.split('\n'):
             line = line.strip()
             if not line: continue
+            
+            # Dilekçe başlıklarını ortalama
+            if line in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]:
+                p = doc.add_paragraph()
+                p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                p.add_run(line).bold = True
+                continue
+                
             if line.startswith('---'):
                 doc.add_paragraph().add_run('_' * 50)
                 continue
@@ -75,6 +87,7 @@ def create_docx(vaka_listesi):
                 parts = line.split('**')
                 for i, part in enumerate(parts):
                     if part: p.add_run(part).bold = (i % 2 != 0)
+        
         if idx < len(vaka_listesi): doc.add_page_break()
             
     docx_io = io.BytesIO()
@@ -99,7 +112,7 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
-    <div class="firm-badge">Maliyet Optimize Edilmiş 3.1 Pro</div>
+    <div class="firm-badge">Özel Dilekçe Motoru Aktif (3.1 Pro)</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -113,29 +126,42 @@ with st.sidebar:
     api_key = api_key_input if api_key_input else api_key
 
 def resize_for_api(image, max_size=1024):
-    """Maliyeti düşürmek için görseli optimize eder."""
     img = image.copy()
     img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
     return img
 
-def get_master_prompt(sektor, mecra, metin=""):
+def get_master_prompt(sektor, mecra, metin="", url=""):
     ek_metin = f"\nReklam Metni/İddia: {metin}\n" if metin else ""
+    ek_url = f"İhlal Linki: {url}\n" if url else ""
     return f"""SEN TİCARET BAKANLIĞI REKLAM KURULU BAŞDENETÇİSİ VE UZMAN BİR HAKSIZ REKABET AVUKATISIN.
-Sektör: {sektor} | Mecra: {mecra} {ek_metin}
+Sektör: {sektor} | Mecra: {mecra} 
+{ek_url}{ek_metin}
 
-Sadece yüzeysel tespit yapma. Reklam Kurulu'nun yerleşik Karar Havuzunu ve TİTCK Kozmetik Kılavuzunu işleterek en ince ihlalleri yakala. Pazarlama ağzı KULLANMA.
+Senden İKİ BÖLÜMDEN oluşan bir çıktı istiyorum. 
 
-### 1. Şekil Şartları ve Gizli İhlaller
-(Görseli dedektif gibi incele. #Reklam ibaresi arka planla zıt (kontrast) renkte mi? Küçük puntoyla veya en alta saklanmış mı? Sosyal Medya Kılavuzu "ilk bakışta görülme" kuralı ihlal ediliyor mu?)
+--- BÖLÜM 1: HUKUKİ MÜTALAA VE RİSK ANALİZİ ---
+Aşağıdaki spesifik "Haksız Rekabet" noktalarını gözden kaçırma:
+1. "İçermez" Hilesi: Formülasyon gereği zaten olmaması gereken (örn: kremde SLS) veya yasal olan (örn: Paraben) bir maddenin "içermez" diye satılması rakipleri kötüleme ve haksız rekabettir.
+2. Ürün İsmi İhlalleri: "Ato Cure" gibi isimler bile tek başına tedavi algısı yaratabilir.
+3. Kozmetik Sınırı: Tedavi, onarım, zayıflama (lipoliz) iddiaları kozmetik sınırını aşar. Bebek ürünlerinde tolerans sıfırdır.
+4. Gizli Reklam: #Reklam veya #İşbirliği ibareleri zeminle zıt (kontrast) renkte değilse veya en alta saklanmışsa ihlaldir.
 
-### 2. İddia ve ÜBD (Ürün Bilgi Dosyası) Analizi
-(İfade edilen vaat (örn: tedavi, onarım, toparlanma) kozmetik sınırını aşıp sağlık beyanına giriyor mu? Özellikle bebek/anne ürünlerinde Kurul'un "sıfır tolerans" ilkesini gözet. Marka bu iddiayı klinik testle ispatlayabilir mi?)
+--- BÖLÜM 2: REKLAM KURULU ŞİKAYET DİLEKÇESİ ---
+Yukarıdaki tespitlerini aşağıdaki şablona BİREBİR SADIK KALARAK, tamamen resmî ve agresif bir hukuk diliyle doldur:
 
-### 3. Taarruz Stratejisi (Rakip Analizi)
-(Yönetmelik Madde 7 "Bütüncül Algı" kuralını işlet. Tüketici mizansen ve vaatlerle bir bütün olarak nasıl aldatılıyor? Markanın olası "bu sadece puffery (mübalağa)" savunmasını hukuki argümanla çürüt.)
+T.C. TİCARET BAKANLIĞI
+REKLAM KURULU BAŞKANLIĞINA
+ANKARA
 
-### 4. Şikayet / Aksiyon Taslağı
-(Kurul'a veya CİMER'e sunulmaya hazır, ihlal edilen mevzuat maddelerini numarasıyla belirten, agresif ve net bir şikayet mütalaası yaz.)"""
+**ŞİKAYET EDEN:** [Boş Bırak]
+**ŞİKAYET EDİLEN:** [Tespit Ettiğin Marka/Firma]
+**ŞİKAYET KONUSU:** [İhlalin kısa özeti ve ilgili 6502 ile Ticari Reklam Yönetmeliği maddelerine atıf]
+**AÇIKLAMALAR:**
+1. [İhlal 1 ve Hukuki Dayanağı - Örn: Gizli reklam/Şekil şartı ihlali]
+2. [İhlal 2 ve Hukuki Dayanağı - Örn: Kozmetik tanımını aşan sağlık beyanı veya haksız "içermez" rekabeti]
+3. [İhlal 3 ve Hukuki Dayanağı - Örn: Bütüncül algı ile tüketici istismarı]
+*(Gerektiği kadar madde ekle)*
+**SONUÇ VE İSTEM:** Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; reklam ve bilgilendirmelerin incelenerek yayının durdurulması, yayından kaldırılması ve sorumlu şirketin idari para cezası ile cezalandırılmasını talep ederiz."""
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
@@ -147,8 +173,8 @@ def ai_istek_at(prompt, gorsel, is_stream=False):
     else:
         return model.generate_content([prompt, optimize_gorsel], generation_config={"temperature": 0.2}).text
 
-def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin=""):
-    prompt = get_master_prompt(sektor, mecra, metin)
+def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin="", url=""):
+    prompt = get_master_prompt(sektor, mecra, metin, url)
     try:
         response = ai_istek_at(prompt, gorsel, is_stream=True)
         if response and response.text:
@@ -162,7 +188,7 @@ def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin=""):
         return
 
 def analiz_et_tekil(gorsel, url, sektor, mecra):
-    prompt = f"Bağlantı: {url} \n\n{get_master_prompt(sektor, mecra)}"
+    prompt = get_master_prompt(sektor, mecra, "", url)
     try:
         return ai_istek_at(prompt, gorsel, is_stream=False)
     except Exception as e:
@@ -244,7 +270,7 @@ if not is_radar:
                 reklam_url = st.text_input("Web Sayfası / Ürün Linki", value=st.session_state.get("eklenti_url", ""))
                 reklam_metni = st.text_area("Reklam Metni / Ticari İddialar", height=90)
                 
-                if st.button("Taarruz Analizini Başlat", type="primary"):
+                if st.button("Hukuki Analizi & Dilekçeyi Başlat", type="primary"):
                     st.session_state.rapor_sonucu = None
             
             if st.session_state.vaka_havuzu:
@@ -263,26 +289,38 @@ if not is_radar:
 
     with sag_kolon:
         with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">2. Hukuki Mütalaa Çıktıları</div>', unsafe_allow_html=True)
+            st.markdown('<div class="section-heading" lang="tr">2. Mütalaa ve Şikayet Dilekçesi Çıktıları</div>', unsafe_allow_html=True)
+            
+            # TEKİL ANALİZ ÇIKTISI
             if st.session_state.eklenti_img and st.session_state.rapor_sonucu is None and reklam_url is not None:
                 rapor_alani = st.empty()
                 tam_rapor = ""
-                for parca in generate_multi_role_synthesis_stream(st.session_state.eklenti_img, sektor, mecra, reklam_metni):
+                for parca in generate_multi_role_synthesis_stream(st.session_state.eklenti_img, sektor, mecra, reklam_metni, reklam_url):
                     tam_rapor += parca
                     rapor_alani.markdown(tam_rapor + "▌")
                 rapor_alani.markdown(tam_rapor)
                 st.session_state.rapor_sonucu = tam_rapor
+                
             elif st.session_state.rapor_sonucu:
                 st.markdown(st.session_state.rapor_sonucu)
+                
+            # TEKİL ANALİZ İÇİN WORD İNDİRME BUTONU
+            if st.session_state.rapor_sonucu and st.session_state.eklenti_img:
+                tekil_vaka = [{"url": reklam_url, "gorsel": st.session_state.eklenti_img, "rapor": st.session_state.rapor_sonucu}]
+                word_bytes_tekil = create_docx(tekil_vaka)
+                st.download_button("⬇️ Analizi ve Dilekçeyi İndir (DOCX)", word_bytes_tekil, "adshield_dilekce.docx", use_container_width=True)
 
+            # TOPLU ANALİZ ÇIKTISI
             if st.session_state.vaka_havuzu:
+                st.divider()
+                st.markdown("**Toplu Denetim Dosyaları**")
                 for idx, vaka in enumerate(st.session_state.vaka_havuzu, 1):
                     with st.expander(f"Vaka #{idx}"):
                         st.image(vaka["gorsel"], width=150)
                         if vaka["rapor"]: st.markdown(vaka["rapor"])
                 if any(v.get("rapor") for v in st.session_state.vaka_havuzu):
-                    word_bytes = create_docx(st.session_state.vaka_havuzu)
-                    st.download_button("⬇️ Tüm Raporları İndir (DOCX)", word_bytes, "adshield_toplu.docx", use_container_width=True)
+                    word_bytes_toplu = create_docx(st.session_state.vaka_havuzu)
+                    st.download_button("⬇️ Tüm Dosyaları İndir (DOCX)", word_bytes_toplu, "adshield_toplu_dilekce.docx", use_container_width=True, type="primary")
 
 else:
     with sol_kolon:
