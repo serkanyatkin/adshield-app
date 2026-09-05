@@ -99,7 +99,7 @@ st.markdown("""
 </style>
 <div class="firm-header" lang="tr">
     <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
-    <div class="firm-badge">Maliyet Optimize Edilmiş 2.5 Pro</div>
+    <div class="firm-badge">Maliyet Optimize Edilmiş 3.1 Pro</div>
 </div>
 """, unsafe_allow_html=True)
 
@@ -139,7 +139,7 @@ Sadece yüzeysel tespit yapma. Reklam Kurulu'nun yerleşik Karar Havuzunu ve Tİ
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-2.5-pro")
+    model = genai.GenerativeModel("gemini-3.1-pro-preview")
     optimize_gorsel = resize_for_api(gorsel)
     
     if is_stream:
