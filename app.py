@@ -291,14 +291,6 @@ if not is_radar:
                         st.download_button("⚖️ Şikayet Dilekçesini İndir", word_dilekce, "adshield_dilekce.docx", use_container_width=True, type="primary")
 
 else:
-    with sol_kolon:
-        with st.container(border=True):
-            st.markdown('<div class="section-heading" lang="tr">Pazar Radarı</div>', unsafe_allow_html=True)
-            radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
-            if st.button("Hedefleri Bul", type="primary"):
-                with st.spinner("Tarama sürüyor..."):
-                    # NameError hatasını çözen düzeltme
-                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, SABIT_SERP_KEY)
     with sag_kolon:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
@@ -306,4 +298,10 @@ else:
                 sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
                 for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
                     with sekmeler[i]:
-                        for idx, item in enumerate(links, 1): st.markdown(f"**{idx}. [{item['baslik']}]({item['url']})**")
+                        for idx, item in enumerate(links, 1): 
+                            if item["baslik"] == "Hata/Engellendi":
+                                st.error(f"API Hata Detayı: {item['snippet']}")
+                            else:
+                                st.markdown(f"**{idx}. [{item['baslik']}]({item['url']})**")
+                                if item["snippet"]:
+                                    st.caption(item["snippet"])
