@@ -160,7 +160,8 @@ SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-pro-latest")
+    # Model ismi güncellendi
+    model = genai.GenerativeModel("gemini-1.5-pro")
     optimize_gorsel = resize_for_api(gorsel)
     
     if is_stream:
@@ -201,9 +202,10 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
 def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
+    # Pazar Radarı aramaları esnetildi
     queries = {
-        "📸 Instagram": f'site:instagram.com intitle:"{t}"',
-        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) intitle:"{t}" -inurl:sr -inurl:ara'
+        "📸 Instagram": f'site:instagram.com "{t}"',
+        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) "{t}"'
     }
     kategorize_sonuclar = {}
     for kat, q in queries.items():
