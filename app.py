@@ -202,8 +202,8 @@ def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
     queries = {
-        "📸 Instagram": f'site:instagram.com intitle:"{t}"',
-        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) intitle:"{t}" -inurl:sr -inurl:ara'
+        "📸 Instagram": f'site:instagram.com "{t}"',
+        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) "{t}" -inurl:sr -inurl:ara'
     }
     kategorize_sonuclar = {}
     for kat, q in queries.items():
@@ -298,7 +298,7 @@ else:
             radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
             if st.button("Hedefleri Bul", type="primary"):
                 with st.spinner("Tarama sürüyor..."):
-                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, serpapi_key)
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, SABIT_SERP_KEY)
     with sag_kolon:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
