@@ -161,7 +161,7 @@ SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde reklam ve bilgilendi
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-3.0-pro")
+    model = genai.GenerativeModel("gemini-3.1-pro-preview")
     optimize_gorsel = resize_for_api(gorsel)
     
     if is_stream:
@@ -203,8 +203,8 @@ def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
     queries = {
-        "📸 Instagram": f'site:instagram.com "{t}"',
-        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) "{t}"'
+        "📸 Instagram": f'site:instagram.com {t}',
+        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) {t}'
     }
     kategorize_sonuclar = {}
     for kat, q in queries.items():
