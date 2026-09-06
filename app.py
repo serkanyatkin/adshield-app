@@ -1,117 +1,309 @@
 import streamlit as st
+import streamlit.components.v1 as components
 import google.generativeai as genai
-from apify_client import ApifyClient
-from serpapi import GoogleSearch
+from PIL import Image
+import docx
+from docx.shared import Inches, Pt
+from docx.enum.text import WD_ALIGN_PARAGRAPH
+import requests
+import io
+import urllib.parse
+import time
 import json
-import re
+import base64
 
-# API Yapılandırmaları (Çevresel değişkenlerden çekilmesi önerilir)
-GEMINI_API_KEY = "SİZİN_GEMINI_API_ANAHTARINIZ"
-APIFY_API_TOKEN = "SİZİN_APIFY_API_ANAHTARINIZ"
-SERPAPI_API_KEY = "SİZİN_SERPAPI_API_ANAHTARINIZ"
+st.set_page_config(page_title="AdShield | Kurumsal Denetim", layout="wide", initial_sidebar_state="collapsed")
 
-genai.configure(api_key=GEMINI_API_KEY)
-
-# Kozmetik Sektörüne Özel Optimize Edilmiş Sistem Komutu
-SYSTEM_PROMPT = """
-Sen, Ticaret Bakanlığı Reklam Kurulu mevzuatına hakim, kozmetik ürün reklamları üzerine uzmanlaşmış bir hukuki denetim asistanısın.
-Görevin, sunulan kozmetik reklam metnini inceleyerek mevzuata aykırılıkları tespit etmektir. 
-Özellikle şu ihlallere odaklan:
-1. Hastalıkları tedavi edici (endikasyon belirten) ilaç algısı yaratan sağlık beyanları.
-2. "Bilimsel olarak kanıtlanmıştır", "%100 etkili" gibi bağımsız klinik test gerektiren ispatlanmamış mutlak iddialar.
-
-Lütfen SADECE aşağıdaki JSON formatında yanıt ver:
-{
-  "uyumluluk_durumu": "Başarılı" veya "İhlal Tespit Edildi",
-  "ihlal_kategorisi": ["Örn: Sağlık Beyanı İhlali", "İspatlanmamış İddia"],
-  "riskli_ifadeler": ["İhlale konu olan doğrudan alıntılar"],
-  "hukuki_gerekce": ["Mevzuata dayalı kısa açıklama"],
-  "duzeltme_onerisi": ["Metnin yasal hale getirilmesi için somut öneri"]
-}
-"""
-
-def clean_and_filter_text(text):
-    """Web ve arama sonuçlarından gelen ham metindeki menü, footer ve anlamsız verileri filtreler."""
-    if not text:
-        return ""
-    lines = text.split('\n')
-    # 20 karakterden kısa satırları ve sadece sembol içeren (navigasyon/UI) kısımları ele
-    filtered_lines = [
-        line.strip() for line in lines 
-        if len(line.strip()) > 20 and not re.match(r'^[^a-zA-Z0-9ğüşöçİĞÜŞÖÇ]+$', line.strip())
-    ]
-    return " ".join(filtered_lines)
-
-def analyze_with_gemini(text_to_analyze):
-    """Optimize edilmiş prompt ile Gemini analizini başlatır."""
-    model = genai.GenerativeModel('gemini-1.5-pro-latest')
-    response = model.generate_content(f"{SYSTEM_PROMPT}\n\nİncelenecek Kozmetik Reklam Metni:\n{text_to_analyze}")
-    return response.text
-
-st.set_page_config(page_title="AdShield | Kozmetik Denetim", page_icon="🛡️", layout="wide")
-
-st.title("🛡️ AdShield: Kozmetik Reklam Uyumluluk Denetimi")
-
-st.sidebar.header("Veri Toplama Araçları")
-veri_kaynagi = st.sidebar.radio("Analiz Edilecek Veri Kaynağı:", ["Manuel Metin Girişi", "Web Sayfası (Apify)", "Arama Motoru (SerpApi)"])
-
-ad_text = ""
-raw_text = ""
-
-if veri_kaynagi == "Manuel Metin Girişi":
-    ad_text = st.text_area("Kozmetik reklam metnini veya senaryosunu buraya yapıştırın:", height=200)
-
-elif veri_kaynagi == "Web Sayfası (Apify)":
-    target_url = st.text_input("Taranacak kozmetik ürün URL'sini girin:")
-    if st.button("Apify ile İçerik Çek"):
-        with st.spinner("Apify üzerinden sayfa verisi alınıyor..."):
-            client = ApifyClient(APIFY_API_TOKEN)
-            run = client.actor("apify/web-scraper").call(run_input={"startUrls": [{"url": target_url}]})
-            dataset_items = client.dataset(run["defaultDatasetId"]).list_items().items
-            if dataset_items:
-                raw_text = dataset_items[0].get('text', '')
-                ad_text = clean_and_filter_text(raw_text)
-                st.success("Veri başarıyla çekildi ve filtrelendi!")
-                st.text_area("Filtrelenmiş Analiz Verisi:", value=ad_text, height=150)
-
-elif veri_kaynagi == "Arama Motoru (SerpApi)":
-    search_query = st.text_input("Kozmetik ürün veya kampanya araması yapın:")
-    if st.button("SerpApi ile Ara"):
-        with st.spinner("Arama sonuçları getiriliyor ve filtreleniyor..."):
-            params = {
-              "engine": "google",
-              "q": search_query,
-              "api_key": SERPAPI_API_KEY,
-              "gl": "tr",
-              "hl": "tr"
-            }
-            search = GoogleSearch(params)
-            results = search.get_dict()
-            organic_results = results.get("organic_results", [])
+def eklenti_verilerini_getir():
+    try:
+        u_url = st.secrets.get("UPSTASH_REDIS_REST_URL")
+        u_token = st.secrets.get("UPSTASH_REDIS_REST_TOKEN")
+        if not u_url or not u_token: return []
             
-            raw_text = " ".join([res.get("snippet", "") for res in organic_results[:5]])
-            ad_text = clean_and_filter_text(raw_text)
-            
-            st.success("Arama tamamlandı!")
-            st.info(f"Filtrelenmiş Arama Özetleri:\n{ad_text}")
+        headers = {"Authorization": f"Bearer {u_token}"}
+        res = requests.get(f"{u_url}/lrange/adshield_queue/0/-1", headers=headers, timeout=5)
+        if res.status_code == 200:
+            data = res.json()
+            raw_list = data.get("result", [])
+            if raw_list:
+                requests.get(f"{u_url}/del/adshield_queue", headers=headers, timeout=3)
+                islenmis_liste = []
+                for item in raw_list:
+                    parsed = json.loads(item)
+                    if isinstance(parsed, str): parsed = json.loads(parsed)
+                    islenmis_liste.append(parsed)
+                return islenmis_liste
+    except: pass
+    return []
 
-if st.button("Denetimi Başlat", type="primary") and ad_text:
-    with st.spinner("Gemini API üzerinden hukuki denetim yapılıyor..."):
+def create_single_docx(metin, gorsel=None, url="", is_dilekce=False):
+    doc = docx.Document()
+    style = doc.styles['Normal']
+    style.font.name = 'Calibri'
+    style.font.size = Pt(11)
+
+    if url and not is_dilekce:
+        p_url = doc.add_paragraph()
+        p_url.add_run("İhlal Kaynağı (URL): ").bold = True
+        p_url.add_run(url)
+        
+    if gorsel and not is_dilekce:
         try:
-            result = analyze_with_gemini(ad_text)
-            cleaned_result = result.replace("```json", "").replace("```", "").strip()
-            parsed_json = json.loads(cleaned_result)
-            
-            st.subheader("📊 Analiz Sonucu")
-            
-            if parsed_json.get("uyumluluk_durumu") == "İhlal Tespit Edildi":
-                st.error(f"Durum: {parsed_json.get('uyumluluk_durumu')}")
-            else:
-                st.success(f"Durum: {parsed_json.get('uyumluluk_durumu')}")
+            img_io = io.BytesIO()
+            gorsel.save(img_io, format="PNG")
+            img_io.seek(0)
+            doc.add_picture(img_io, width=Inches(4.5))
+        except: pass
+
+    for line in metin.split('\n'):
+        line = line.strip()
+        if not line: continue
+        if line.startswith("--- DİLEKÇE"): continue
+
+        if is_dilekce and line in ["T.C. TİCARET BAKANLIĞI", "REKLAM KURULU BAŞKANLIĞINA", "ANKARA"]:
+            p = doc.add_paragraph()
+            p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+            p.add_run(line).bold = True
+            continue
+
+        if line.startswith('### '): doc.add_heading(line[4:].replace('**', ''), level=3)
+        elif line.startswith('## '): doc.add_heading(line[3:].replace('**', ''), level=2)
+        elif line.startswith('# '): doc.add_heading(line[2:].replace('**', ''), level=1)
+        elif line.startswith('* ') or line.startswith('- '):
+            p = doc.add_paragraph(style='List Bullet')
+            parts = line[2:].split('**')
+            for i, part in enumerate(parts):
+                if part: p.add_run(part).bold = (i % 2 != 0)
+        else:
+            p = doc.add_paragraph()
+            parts = line.split('**')
+            for i, part in enumerate(parts):
+                if part: p.add_run(part).bold = (i % 2 != 0)
                 
-            st.json(parsed_json)
+    docx_io = io.BytesIO()
+    doc.save(docx_io)
+    return docx_io.getvalue()
+
+st.markdown("""
+<style>
+    @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@600;700&family=Plus+Jakarta+Sans:wght@400;500;600&display=swap');
+    * { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .block-container { max-width: 1200px !important; padding-top: 1.2rem !important; margin: 0 auto !important; }
+    .firm-header { background-color: #2C3848; padding: 18px 26px; border-radius: 6px; color: #ffffff; display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
+    .firm-title { font-family: 'Cinzel', serif; font-size: 19px; font-weight: 700; letter-spacing: 1.5px; }
+    .firm-subtitle { font-size: 11px; color: #DCE4EC; margin-top: 2px; }
+    .firm-badge { background: rgba(255, 255, 255, 0.15); border: 1px solid rgba(255, 255, 255, 0.3); font-size: 11px; padding: 5px 12px; border-radius: 4px; }
+    .section-heading { font-family: 'Cinzel', serif; font-size: 13.5px; font-weight: 700; color: #2C3848; border-bottom: 2px solid #E2E8F0; padding-bottom: 5px; margin-bottom: 12px; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] { display: flex; justify-content: center; gap: 14px; width: 100%; margin-bottom: 20px; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label { flex: 1; background: #FFFFFF; border: 1.5px solid #CBD5E1; border-radius: 6px; padding: 12px 18px; cursor: pointer; text-align: center; display: flex; align-items: center; justify-content: center; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label > div:first-child { display: none !important; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:hover { border-color: #5D728B; background: #F8FAFC; }
+    div[data-testid="stRadio"] > div[role="radiogroup"] > label:has(input:checked) { border-color: #5D728B !important; background-color: #F1F5F9 !important; font-weight: 600 !important; color: #1E293B !important; }
+</style>
+<div class="firm-header" lang="tr">
+    <div><div class="firm-title">ADSHIELD PRO</div><div class="firm-subtitle">Hukuki Mütalaa & Rekabet Taarruz Sistemi</div></div>
+    <div class="firm-badge">Tam Korumalı & Çift Çıktı Motoru Aktif</div>
+</div>
+""", unsafe_allow_html=True)
+
+api_key = st.secrets.get("GEMINI_API_KEY", "")
+SABIT_SERP_KEY = st.secrets.get("SERPAPI_API_KEY", "")
+
+with st.sidebar:
+    st.header("Sistem Ayarları")
+    api_key_input = st.text_input("Gemini API Key:", value=api_key, type="password")
+    serpapi_key_input = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
+    api_key = api_key_input if api_key_input else api_key
+    SABIT_SERP_KEY = serpapi_key_input if serpapi_key_input else SABIT_SERP_KEY
+
+def resize_for_api(image, max_size=1024):
+    img = image.copy()
+    img.thumbnail((max_size, max_size), Image.Resampling.LANCZOS)
+    return img
+
+def get_master_prompt(sektor, mecra, metin="", url=""):
+    ek_metin = f"\nReklam Metni/İddia: {metin}\n" if metin else ""
+    ek_url = f"İhlal Linki: {url}\n" if url else ""
+    return f"""SEN TİCARET BAKANLIĞI REKLAM KURULU BAŞDENETÇİSİ VE UZMAN BİR HAKSIZ REKABET AVUKATISIN.
+Sektör: {sektor} | Mecra: {mecra} 
+{ek_url}{ek_metin}
+
+Senden YAPAY ZEKA AĞZI KULLANMADAN, resmi hukuk dilinde İKİ FARKLI METİN üretmeni istiyorum. Araya KESİNLİKLE "--- DİLEKÇE BAŞLANGICI ---" ayıracını koy.
+
+[BÖLÜM 1: MÜTALAA]
+Sadece ihlalleri hukuki dayanaklarıyla (Kozmetik Kanunu m.2, Ticari Reklam Yön. m.7 vb.) açıkla. 
+- Formülasyon gereği olmaması gereken (SLS vb.) veya yasal (Paraben) maddeler üzerinden "içermez" hilesi yapan haksız rekabetleri affetme.
+- Ürün isminde "Ato Cure" gibi kelime hileleriyle tıbbi tedavi algısı yaratılıp yaratılmadığını incele.
+- "1 numara" gibi veri manipülasyonlarını deşifre et.
+
+--- DİLEKÇE BAŞLANGICI ---
+(BU KISIMDAN SONRA ASLA MADDELENDİRME İŞARETİ (*) KULLANMA. NUMARALI BAŞLIK (1., 2.) KULLAN.)
+
+T.C. TİCARET BAKANLIĞI
+REKLAM KURULU BAŞKANLIĞINA
+ANKARA
+
+ŞİKAYET EDEN 		: [Boş Bırak]
+ADRES	 		: [Boş Bırak]
+ŞİKAYET EDİLEN 	: [Firma Unvanını Tahmin Et]
+ŞİKAYET KONUSU 	: Söz konusu ürünün satış sayfasında, ürün başlığında, görsel ve tanıtım metinlerinde yer alan iddialar hakkında 6502 sayılı Tüketicinin Korunması Hakkında Kanun, Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ve 5324 sayılı Kozmetik Kanunu uyarınca reklamların durdurulması ve ilgililer hakkında idari para cezası uygulanması talebidir.
+AÇIKLAMALAR :
+Şikayet edilen satıcı ve marka sahibi tarafından satışa arz edilen kozmetik ürünün tanıtım ve reklam materyalleri incelendiğinde; yürürlükteki mevzuat hükümleri, TİTCK kılavuzları ve Reklam Kurulu’nun yerleşik içtihatları çerçevesinde açıkça hukuka ve tüketici haklarına aykırılık teşkil ettiği tespit edilmiştir.
+
+1. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
+
+2. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
+
+SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayının durdurulması ya da düzeltilmesi, yayından kaldırılması ve sorumlu şirketin idari para cezası ile cezalandırılmasını talep ederiz."""
+
+def ai_istek_at(prompt, gorsel, is_stream=False):
+    genai.configure(api_key=api_key)
+    model = genai.GenerativeModel("gemini-3.1-pro-preview")
+    optimize_gorsel = resize_for_api(gorsel)
+    
+    if is_stream:
+        return model.generate_content([prompt, optimize_gorsel], stream=False, generation_config={"temperature": 0.2})
+    else:
+        return model.generate_content([prompt, optimize_gorsel], generation_config={"temperature": 0.2}).text
+
+def generate_multi_role_synthesis_stream(gorsel, sektor, mecra, metin="", url=""):
+    prompt = get_master_prompt(sektor, mecra, metin, url)
+    try:
+        response = ai_istek_at(prompt, gorsel, is_stream=True)
+        if response and response.text:
+            words = response.text.split(' ')
+            for i in range(0, len(words), 6):
+                yield ' '.join(words[i:i+6]) + ' '
+                time.sleep(0.02)
+            return
+    except Exception as e:
+        yield f"\nSistem Hatası: {str(e)}"
+        return
+
+def tekil_sorgu_at(kategori, sorgu, api_key_val):
+    url = f"https://serpapi.com/search.json?q={urllib.parse.quote(sorgu)}&api_key={api_key_val}&engine=google&gl=tr&hl=tr&num=20"
+    try:
+        response = requests.get(url, timeout=20)
+        data = response.json()
+        if "error" in data: return kategori, [{"baslik": "Hata/Engellendi", "url": "#", "snippet": data['error']}]
+        link_havuzu = []
+        for result in data.get("organic_results", []):
+            link = result.get("link", "")
+            if not link.startswith("http"): continue
+            link_havuzu.append({"baslik": result.get("title", "İsimsiz"), "url": link, "snippet": result.get("snippet", "")})
+        if not link_havuzu: return kategori, [{"baslik": "Uygun sonuç bulunamadı.", "url": "#", "snippet": ""}]
+        return kategori, link_havuzu
+    except Exception as e: 
+        return kategori, [{"baslik": "⚠️ HATA", "url": "#", "snippet": str(e)}]
+
+def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
+    if not api_key_val or not urun_adi.strip(): return {}
+    t = urun_adi.strip()
+    queries = {
+        "📸 Instagram": f'site:instagram.com intitle:"{t}"',
+        "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) intitle:"{t}" -inurl:sr -inurl:ara'
+    }
+    kategorize_sonuclar = {}
+    for kat, q in queries.items():
+        _, sonuclar = tekil_sorgu_at(kat, q, api_key_val)
+        gorulenler = set()
+        tekil_list = []
+        for item in sonuclar:
+            if item["url"] not in gorulenler:
+                gorulenler.add(item["url"])
+                tekil_list.append(item)
+        kategorize_sonuclar[kat] = tekil_list
+    return kategorize_sonuclar
+
+for k in ["rapor_sonucu", "eklenti_img", "eklenti_url", "vaka_havuzu", "radar_link_sonuclari"]:
+    if k not in st.session_state: st.session_state[k] = None if k != "vaka_havuzu" else []
+
+mod_secimi = st.radio("Denetim Modu", [
+    "Kurumsal Kampanya Taslağı Uyum Denetimi",
+    "Piyasa ve Rakip Reklam İncelemesi",
+    "360° Çoklu Satıcı ve Pazar Radarı"
+], horizontal=True, label_visibility="collapsed")
+
+is_radar = "360°" in mod_secimi
+
+sol_kolon, sag_kolon = st.columns([1, 1.25], gap="large")
+
+if not is_radar:
+    with sol_kolon:
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">1. Veri Yükleme</div>', unsafe_allow_html=True)
+            col1, col2 = st.columns(2)
+            with col1:
+                if st.button("📥 Son Görüntüyü Al"):
+                    gelen = eklenti_verilerini_getir()
+                    if gelen:
+                        son = gelen[-1]
+                        st.session_state.eklenti_url = son.get('url', '')
+                        b64 = son.get('image', '').split(',')[-1].strip() + '=='
+                        st.session_state.eklenti_img = Image.open(io.BytesIO(base64.b64decode(b64))).convert("RGB")
+                        st.rerun()
+
+            if st.session_state.eklenti_img:
+                st.image(st.session_state.eklenti_img, use_container_width=True)
+                sektor = st.selectbox("Faaliyet Sektörü", ["Kozmetik & Kişisel Bakım", "Takviye Edici Gıda & Sağlık", "E-Ticaret", "Diğer"])
+                mecra = st.selectbox("Yayınlanacak Mecra", ["İnternet / Sosyal Medya", "Satış Noktası", "Televizyon", "Açık Hava"])
+                reklam_url = st.text_input("Web Sayfası / Ürün Linki", value=st.session_state.get("eklenti_url", ""))
+                reklam_metni = st.text_area("Reklam Metni / Ticari İddialar", height=90)
+                
+                if st.button("Hukuki Analizi & Dilekçeyi Başlat", type="primary"):
+                    st.session_state.rapor_sonucu = None
             
-        except Exception as e:
-            st.error(f"Bir hata oluştu: {str(e)}")
-elif st.button("Denetimi Başlat") and not ad_text:
-    st.warning("Lütfen analiz edilecek bir metin girin veya veri kaynaklarından içerik çekin.")
+    with sag_kolon:
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">2. Çıktılar</div>', unsafe_allow_html=True)
+            
+            if st.session_state.eklenti_img and st.session_state.rapor_sonucu is None and reklam_url is not None:
+                rapor_alani = st.empty()
+                tam_rapor = ""
+                for parca in generate_multi_role_synthesis_stream(st.session_state.eklenti_img, sektor, mecra, reklam_metni, reklam_url):
+                    tam_rapor += parca
+                    rapor_alani.markdown(tam_rapor + "▌")
+                rapor_alani.markdown(tam_rapor)
+                st.session_state.rapor_sonucu = tam_rapor
+                
+            elif st.session_state.rapor_sonucu:
+                st.markdown(st.session_state.rapor_sonucu)
+                
+            if st.session_state.rapor_sonucu:
+                # Metni İkiye Böl
+                rapor_kismi = st.session_state.rapor_sonucu
+                dilekce_kismi = ""
+                if "--- DİLEKÇE BAŞLANGICI ---" in st.session_state.rapor_sonucu:
+                    parcalar = st.session_state.rapor_sonucu.split("--- DİLEKÇE BAŞLANGICI ---")
+                    rapor_kismi = parcalar[0]
+                    if len(parcalar) > 1:
+                        dilekce_kismi = parcalar[1]
+                
+                st.divider()
+                col_indir_1, col_indir_2 = st.columns(2)
+                with col_indir_1:
+                    word_rapor = create_single_docx(rapor_kismi, gorsel=st.session_state.eklenti_img, url=reklam_url, is_dilekce=False)
+                    st.download_button("📊 Mütalaa Raporunu İndir", word_rapor, "adshield_mutalaa.docx", use_container_width=True)
+                with col_indir_2:
+                    if dilekce_kismi:
+                        word_dilekce = create_single_docx(dilekce_kismi, is_dilekce=True)
+                        st.download_button("⚖️ Şikayet Dilekçesini İndir", word_dilekce, "adshield_dilekce.docx", use_container_width=True, type="primary")
+
+else:
+    with sol_kolon:
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">Pazar Radarı</div>', unsafe_allow_html=True)
+            radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
+            if st.button("Hedefleri Bul", type="primary"):
+                with st.spinner("Tarama sürüyor..."):
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, serpapi_key)
+    with sag_kolon:
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
+            if st.session_state.get("radar_link_sonuclari"):
+                sekmeler = st.tabs(list(st.session_state.radar_link_sonuclari.keys()))
+                for i, (kat, links) in enumerate(st.session_state.radar_link_sonuclari.items()):
+                    with sekmeler[i]:
+                        for idx, item in enumerate(links, 1): st.markdown(f"**{idx}. [{item['baslik']}]({item['url']})**")
