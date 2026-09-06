@@ -160,7 +160,7 @@ SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-3.1-pro-preview")
+    model = genai.GenerativeModel("gemini-1.5-pro-latest")
     optimize_gorsel = resize_for_api(gorsel)
     
     if is_stream:
@@ -298,7 +298,7 @@ else:
             radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
             if st.button("Hedefleri Bul", type="primary"):
                 with st.spinner("Tarama sürüyor..."):
-                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, serpapi_key)
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, SABIT_SERP_KEY)
     with sag_kolon:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
