@@ -113,8 +113,10 @@ with st.sidebar:
     st.header("Sistem Ayarları")
     api_key_input = st.text_input("Gemini API Key:", value=api_key, type="password")
     serpapi_key_input = st.text_input("SerpApi Key:", value=SABIT_SERP_KEY, type="password")
-    api_key = api_key_input if api_key_input else api_key
-    SABIT_SERP_KEY = serpapi_key_input if serpapi_key_input else SABIT_SERP_KEY
+    
+    # Kullanıcı kutuyu silse bile boşlukları temizleyip, boşsa gizli kasadaki anahtarı zorla kullandırıyoruz.
+    api_key = api_key_input.strip() if api_key_input.strip() else st.secrets.get("GEMINI_API_KEY", "")
+    SABIT_SERP_KEY = serpapi_key_input.strip() if serpapi_key_input.strip() else st.secrets.get("SERPAPI_API_KEY", "")
 
 def resize_for_api(image, max_size=1024):
     img = image.copy()
