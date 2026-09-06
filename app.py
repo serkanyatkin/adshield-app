@@ -124,43 +124,45 @@ def resize_for_api(image, max_size=1024):
     return img
 
 def get_master_prompt(sektor, mecra, metin="", url=""):
-    ek_metin = f"\nKullanıcı Tarafından Belirtilen Ek İddia: {metin}\n" if metin else ""
+    ek_metin = f"\nReklam Metni/İddia: {metin}\n" if metin else ""
     ek_url = f"İhlal Linki: {url}\n" if url else ""
-    return f"""SEN TİCARET BAKANLIĞI REKLAM KURULU MEVZUATINA VE TÜKETİCİ HUKUKUNA HAKİM UZMAN BİR AVUKATSIN.
+    return f"""SEN TİCARET BAKANLIĞI REKLAM KURULU BAŞDENETÇİSİ VE UZMAN BİR HAKSIZ REKABET AVUKATISIN.
 Sektör: {sektor} | Mecra: {mecra} 
 {ek_url}{ek_metin}
 
-Sana ekte bir reklam/tanıtım görseli sunulmuştur. Görevin, bu görseldeki tüm metinleri, iddiaları ve tüketiciye verilmek istenen mesajı 6502 sayılı Tüketicinin Korunması Hakkında Kanun ve Ticari Reklam Yönetmeliği kapsamında denetlemektir. YAPAY ZEKA AĞZI KULLANMA. İki bölüm halinde resmi mütalaa ve şikayet dilekçesi üret. 
-
-Araya KESİNLİKLE "--- DİLEKÇE BAŞLANGICI ---" ayıracını koy.
+Senden YAPAY ZEKA AĞZI KULLANMADAN, resmi hukuk dilinde İKİ FARKLI METİN üretmeni istiyorum. Araya KESİNLİKLE "--- DİLEKÇE BAŞLANGICI ---" ayıracını koy.
 
 [BÖLÜM 1: MÜTALAA]
-Görseldeki aldatıcı unsurları, mevzuata aykırı sağlık beyanlarını, ispat külfeti yerine getirilmemiş mutlak iddiaları ve örtülü reklam ihlallerini doğrudan 6502 sayılı Kanun ve ilgili yönetmelik maddeleriyle eşleştirerek somut şekilde açıkla. 
+Sadece ihlalleri hukuki dayanaklarıyla (Kozmetik Kanunu m.2, Ticari Reklam Yön. m.7 vb.) açıkla. 
+- Formülasyon gereği olmaması gereken (SLS vb.) veya yasal (Paraben) maddeler üzerinden "içermez" hilesi yapan haksız rekabetleri affetme.
+- Ürün isminde "Ato Cure" gibi kelime hileleriyle tıbbi tedavi algısı yaratılıp yaratılmadığını incele.
+- "1 numara" gibi veri manipülasyonlarını deşifre et.
 
 --- DİLEKÇE BAŞLANGICI ---
 (BU KISIMDAN SONRA ASLA MADDELENDİRME İŞARETİ (*) KULLANMA. NUMARALI BAŞLIK (1., 2.) KULLAN.)
 
 T.C. TİCARET BAKANLIĞI
 REKLAM KURULU BAŞKANLIĞINA
+ANKARA
 
-ŞİKAYET EDEN 	: [Boş Bırak]
-ŞİKAYET EDİLEN 	: [Görselden Firma veya Influencer Unvanını Çıkar]
-KONU 		: İncelemeye konu reklam görsellerindeki aldatıcı ifadeler, mevzuata aykırı iddialar ve tüketiciyi yanıltıcı uygulamalar nedeniyle 6502 sayılı Kanun m. 63 uyarınca reklamların durdurulması ve idari para cezası uygulanması talebidir.
-
+ŞİKAYET EDEN 		: [Boş Bırak]
+ADRES	 		: [Boş Bırak]
+ŞİKAYET EDİLEN 	: [Firma Unvanını Tahmin Et]
+ŞİKAYET KONUSU 	: Söz konusu ürünün satış sayfasında, ürün başlığında, görsel ve tanıtım metinlerinde yer alan iddialar hakkında 6502 sayılı Tüketicinin Korunması Hakkında Kanun, Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği ve 5324 sayılı Kozmetik Kanunu uyarınca reklamların durdurulması ve ilgililer hakkında idari para cezası uygulanması talebidir.
 AÇIKLAMALAR :
-Şikayet edilen tarafça yayınlanan reklam materyalleri incelendiğinde, Ticari Reklam ve Haksız Ticari Uygulamalar Yönetmeliği'ne açıkça aykırılık teşkil eden hususlar tespit edilmiştir:
+Şikayet edilen satıcı ve marka sahibi tarafından satışa arz edilen kozmetik ürünün tanıtım ve reklam materyalleri incelendiğinde; yürürlükteki mevzuat hükümleri, TİTCK kılavuzları ve Reklam Kurulu’nun yerleşik içtihatları çerçevesinde açıkça hukuka ve tüketici haklarına aykırılık teşkil ettiği tespit edilmiştir.
 
-1. [İHLAL EDİLEN KURALIN BAŞLIĞI - BÜYÜK HARFLE]
-[Görselden doğrudan alıntı yaparak, ortalama tüketici nezdinde yaratılan yanıltıcı algıyı ve hangi mevzuat hükmünün (Örn: Yönetmelik m.7, m.9, m.24) ihlal edildiğini somutlaştır.]
+1. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
 
-2. [DİĞER İHLAL BAŞLIĞI - BÜYÜK HARFLE]
-[Gerekçeli ve kanun maddesine dayalı açıklama.]
+2. [İHLAL BAŞLIĞI - BÜYÜK HARFLE]
+[Açıklama]
 
-SONUÇ VE İSTEM : Açıklanan nedenlerle, tüketici mağduriyetinin önlenmesi amacıyla mevzuata aykırı reklamların 6502 sayılı Kanun m.63 uyarınca tedbiren ve nihai olarak durdurulmasına, sorumlular hakkında idari para cezası uygulanmasına karar verilmesini talep ederiz."""
+SONUÇ VE İSTEM	: Yukarıdaki açıklamalar çerçevesinde ve kurulunuzun re’sen dikkate alacağı nedenlerle; dilekçemizde belirtilen ve kurulunuzca belirlenecek diğer mecralarda yayınlanmış ve yayınlanan reklam ve bilgilendirmelerin incelenerek yayının durdurulması ya da düzeltilmesi, yayından kaldırılması ve sorumlu şirketin idari para cezası ile cezalandırılmasını talep ederiz."""
 
 def ai_istek_at(prompt, gorsel, is_stream=False):
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel("gemini-1.5-pro")
+    model = genai.GenerativeModel("gemini-3.1-pro-preview")
     optimize_gorsel = resize_for_api(gorsel)
     
     if is_stream:
@@ -201,7 +203,6 @@ def tekil_sorgu_at(kategori, sorgu, api_key_val):
 def gelismis_coklu_hedef_taramasi(urun_adi, api_key_val):
     if not api_key_val or not urun_adi.strip(): return {}
     t = urun_adi.strip()
-    # Sabahki mükemmel çalışan orijinal arama parametrelerine geri dönüldü
     queries = {
         "📸 Instagram": f'site:instagram.com intitle:"{t}"',
         "🛒 E-Ticaret": f'(site:trendyol.com OR site:hepsiburada.com) intitle:"{t}" -inurl:sr -inurl:ara'
@@ -293,6 +294,13 @@ if not is_radar:
                         st.download_button("⚖️ Şikayet Dilekçesini İndir", word_dilekce, "adshield_dilekce.docx", use_container_width=True, type="primary")
 
 else:
+    with sol_kolon:
+        with st.container(border=True):
+            st.markdown('<div class="section-heading" lang="tr">Pazar Radarı</div>', unsafe_allow_html=True)
+            radar_urun = st.text_input("Marka / İhlal Kelimesi", value="incia bebek yağı")
+            if st.button("Hedefleri Bul", type="primary"):
+                with st.spinner("Tarama sürüyor..."):
+                    st.session_state.radar_link_sonuclari = gelismis_coklu_hedef_taramasi(radar_urun, SABIT_SERP_KEY)
     with sag_kolon:
         with st.container(border=True):
             st.markdown('<div class="section-heading" lang="tr">Bulgular</div>', unsafe_allow_html=True)
